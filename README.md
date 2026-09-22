@@ -1,42 +1,15 @@
-# Xmip repository template — Rust
+# xmip-core-codec
 
-This repository is the starter snapshot for a Rust Xmip module repository. It is
-not an Xmip runtime capability.
+Encoding primitives every layer of Xmip shares: how a format's characters
+and bytes are written and read back, never what they mean. What a format
+means stays with the format's own crate.
 
-For a .NET 11 surface — the CLI, the PowerShell module, the MAUI desktop GUI or
-the Blazor web GUI — use
-[xmip-template-dotnet](https://github.com/IlleNilsson/xmip-template-dotnet)
-instead. ADR-0014: every user-interfacing module is .NET 11, and
-`xmip-core-abi` is the exception.
+Until 2026-09-22 each capability wrote these by hand, and copies drifted
+apart: the two SAML gates unescaped the same assertion differently, so one
+name could be two principals. One copy lives here, and every reader uses it.
 
-A repository generated from this template has independent history. Later
-template changes do not automatically rewrite generated repositories.
+| Module | What it is |
+| --- | --- |
+| `xml` | Escaping text and attribute values, and unescaping the five predefined entities and character references |
 
-## Before implementation
-
-Follow [TEMPLATE_SETUP.md](TEMPLATE_SETUP.md), and item 3 first. The new
-repository must be classified and declared in the authoritative Xmip
-architecture manifest before its responsibility or dependencies are treated as
-accepted architecture.
-
-## Toolchain
-
-`rust-toolchain.toml` pins the toolchain for the whole estate. rustup reads it
-automatically and installs what is missing. Do not change it here — raising it
-is one deliberate change across every repository.
-
-## Shared governance
-
-Repository-specific licensing remains explicit in [LICENSE](LICENSE).
-Contribution, security, support, issue and pull-request defaults are inherited
-from [IlleNilsson/.github](https://github.com/IlleNilsson/.github) when they are
-not overridden locally.
-
-## Verification
-
-The included workflow is manual-only and calls the versioned shared workflow at
-`IlleNilsson/.github@v1`. It does not run on pushes, pull requests or a
-schedule.
-
-The ordered stages are formatting, semantic analysis, linting, compilation and
-linking, and test execution. Packaging and publishing are not configured.
+`architecture.toml` carries the maturity.
