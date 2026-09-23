@@ -1,4 +1,4 @@
-# xmip-core-codec
+# xmip-core-library-codec
 
 Encoding primitives every layer of Xmip shares: how a format's characters
 and bytes are written and read back, never what they mean. What a format

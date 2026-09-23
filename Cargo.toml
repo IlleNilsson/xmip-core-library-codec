@@ -2,11 +2,11 @@
 [workspace]
 
 [package]
-name = "xmip-core-codec"
+name = "xmip-core-library-codec"
 version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/IlleNilsson/xmip-core-codec"
+repository = "https://github.com/IlleNilsson/xmip-core-library-codec"
 description = "Encoding primitives for Xmip: how a format's bytes and characters are written."
 
 [lib]
