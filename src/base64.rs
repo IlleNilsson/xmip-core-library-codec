@@ -88,18 +88,33 @@ fn padded(mut out: String) -> String {
     out
 }
 
+/// Three bytes to four digits at a time into a byte buffer, the short tail
+/// last: a character pushed at a time was slow enough in a debug build that
+/// a near end encoding a payload at google-pub-sub's ceiling reached its far
+/// end after the far end had stopped waiting (2026-09-24).
 fn encoding(bytes: &[u8], alphabet: &[u8; 64]) -> String {
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let word = chunk.iter().enumerate().fold(0u32, |word, (index, byte)| {
-            word | (u32::from(*byte) << (16 - 8 * index))
+    let digit = |word: u32, shift: u32| alphabet[((word >> shift) & 0x3f) as usize];
+    let (whole, tail) = bytes.as_chunks::<3>();
+    let mut out = vec![0u8; whole.len() * 4];
+    for (at, [first, second, third]) in out.as_chunks_mut::<4>().0.iter_mut().zip(whole) {
+        let word = u32::from(*first) << 16 | u32::from(*second) << 8 | u32::from(*third);
+        *at = [
+            alphabet[(word >> 18) as usize & 0x3f],
+            alphabet[(word >> 12) as usize & 0x3f],
+            alphabet[(word >> 6) as usize & 0x3f],
+            alphabet[word as usize & 0x3f],
+        ];
+    }
+    if !tail.is_empty() {
+        let word = tail.iter().enumerate().fold(0u32, |word, (index, byte)| {
+            word | u32::from(*byte) << (16 - 8 * index)
         });
-        for index in 0..=chunk.len() {
-            let sextet = (word >> (18 - 6 * index)) & 0x3f;
-            out.push(char::from(alphabet[sextet as usize]));
+        for index in 0..=tail.len() {
+            out.push(digit(word, 18 - 6 * u32::try_from(index).unwrap_or(0)));
         }
     }
-    out
+    // Every digit is from an ASCII alphabet.
+    String::from_utf8(out).unwrap_or_default()
 }
 
 fn decoding(text: &str, values: &[u8; 256], name: &str) -> Result<Vec<u8>> {
@@ -121,8 +136,29 @@ fn decoding(text: &str, values: &[u8; 256], name: &str) -> Result<Vec<u8>> {
     if digits.len() % 4 == 1 {
         return Err(refused("a length no encoding has"));
     }
-    let mut out = Vec::with_capacity(digits.len() * 3 / 4);
-    for chunk in digits.as_bytes().chunks(4) {
+    // Four digits to three bytes at a time, one check for all four: a value
+    // is under 64 and NOT_A_DIGIT is not, so a digit outside the alphabet
+    // sets a bit no digit has. Written into a buffer sized once; the short
+    // tail goes the long way below. A byte at a time was slow enough in a
+    // debug build that a far end decoding a payload at google-pub-sub's
+    // ceiling answered after its near end stopped waiting (2026-09-24).
+    let (whole, tail) = digits.as_bytes().as_chunks::<4>();
+    let mut out = vec![0u8; whole.len() * 3];
+    for (at, [a, b, c, d]) in out.as_chunks_mut::<3>().0.iter_mut().zip(whole) {
+        let (a, b, c, d) = (
+            values[*a as usize],
+            values[*b as usize],
+            values[*c as usize],
+            values[*d as usize],
+        );
+        if (a | b | c | d) & 0xc0 != 0 {
+            return Err(refused("a character outside the alphabet"));
+        }
+        let word = u32::from(a) << 18 | u32::from(b) << 12 | u32::from(c) << 6 | u32::from(d);
+        let [_, first, second, third] = word.to_be_bytes();
+        *at = [first, second, third];
+    }
+    if let Some(chunk) = Some(tail).filter(|tail| !tail.is_empty()) {
         let mut word = 0u32;
         for (index, digit) in chunk.iter().enumerate() {
             let value = values[usize::from(*digit)];
