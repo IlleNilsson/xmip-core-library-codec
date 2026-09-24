@@ -9,12 +9,31 @@
 //! 2026-09-24 two path lexers stepped over whitespace a byte at a time and
 //! panicked inside U+00A0, and two TOML writers quoted a string two ways.
 //!
-//! [`char_reader`] is the character reader every lexer walks its text with;
-//! [`toml`] quotes and reads TOML basic strings; [`xml`] escapes and
-//! unescapes XML character data.
+//! Characters: [`char_reader`] is the character reader every lexer walks
+//! its text with; [`toml`] quotes and reads TOML basic strings; [`xml`]
+//! escapes and unescapes XML character data; [`sql`] writes and reads SQL's
+//! delimited literals and identifiers.
+//!
+//! Bytes: [`cursor`] reads a binary message's fields in order and
+//! [`writer`] writes them; [`varint`] is the base-128 varint and its
+//! zig-zag; [`hex`] and [`base64`] spell bytes as text; [`crc`] is the one
+//! parameterised CRC with each protocol's as a named constant; [`sha1`] is
+//! the digest two protocols still name.
+//!
+//! Time: [`civil`] turns seconds since the epoch into a UTC date and time
+//! of day and back.
 
+pub mod base64;
 pub mod char_reader;
+pub mod civil;
+pub mod crc;
+pub mod cursor;
+pub mod hex;
+pub mod sha1;
+pub mod sql;
 pub mod toml;
+pub mod varint;
+pub mod writer;
 pub mod xml;
 
 /// Why text or bytes are not the encoding they claim to be.
