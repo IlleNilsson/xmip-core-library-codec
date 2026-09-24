@@ -16,9 +16,11 @@ name could be two principals. One copy lives here, and every reader uses it.
 | `crc` | `Crc`, the one CRC, parameterised as the CRC catalogue writes each down, and each CRC a protocol frames with as a named constant held to its catalogue check value: `CRC_16_KERMIT` (IEEE 802.15.4), `CRC_16_DNP`, `CRC_16_EN_13757`, `CRC_32_ISCSI` (CRC-32C), `CRC_8_TS_27_010` (RFCOMM) |
 | `cursor` | `Cursor`, the one byte cursor a binary message's fields are read with: bytes, NUL-terminated fields, varints, and integers and floats in either byte order, never past the end |
 | `hex` | Base 16: bytes as lower-case hex pairs, and either case back |
+| `mime` | A header's media type and its parameters (RFC 2045), and a multipart body (RFC 2046) written and read: `Part`, its headers and its bytes, a delimiter only at the start of a line, a boundary unique to the process |
 | `sha1` | SHA-1 (FIPS 180-4), for the two protocols that still name it: the WebSocket accept key and `MySQL`'s native password |
 | `sql` | `Delimiter`: SQL's delimited text — a `'…'` literal, an `"…"`, `[…]` or backtick identifier — written with the closing delimiter doubled and read back with the doubling undone; which delimiter, and anything else a server adds, is the dialect's |
 | `toml` | Quoting text as a TOML 1.0 basic string, every control character escaped, and reading one back strictly |
+| `utf16` | UTF-16 little-endian, as NTLM, SMB2 and TDS write text: a strict reading that refuses an odd length or an unpaired surrogate, and a lossy one for text a transport only carries |
 | `varint` | The base-128 varint (unsigned LEB128) and the zig-zag mapping of a signed integer onto it |
 | `writer` | `ByteWriter`, the one byte writer, on `Vec<u8>`: the counterpart of `Cursor` |
 | `xml` | Escaping text and attribute values, and unescaping the five predefined entities and character references |
@@ -32,6 +34,11 @@ own copy escaped three characters. The SQL Server, `MySQL` and `PostgreSQL`
 transports, the SQL script archive and the SQL contract's lexer quote and
 read SQL through `sql`; until 2026-09-24 each wrote the rule itself, and two
 far ends read a doubled identifier delimiter as the identifier's end.
+
+AS2's receipt, AS4's SOAP with attachments, MSMQ's SRMP and the message
+capability's multipart shape write and read MIME through `mime`; until
+2026-09-24 each did it itself, and MSMQ took a boundary in the middle of a
+line for a delimiter.
 
 The bytes followed on 2026-09-24. Hex had been written twelve times, base 64
 three, SHA-1 twice, a CRC five times, a byte cursor fourteen, the varint and

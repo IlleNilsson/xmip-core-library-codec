@@ -12,11 +12,13 @@
 //! Characters: [`char_reader`] is the character reader every lexer walks
 //! its text with; [`toml`] quotes and reads TOML basic strings; [`xml`]
 //! escapes and unescapes XML character data; [`sql`] writes and reads SQL's
-//! delimited literals and identifiers.
+//! delimited literals and identifiers; [`mime`] reads a header's media type
+//! and parameters and writes and reads a multipart body.
 //!
 //! Bytes: [`cursor`] reads a binary message's fields in order and
 //! [`writer`] writes them; [`varint`] is the base-128 varint and its
-//! zig-zag; [`hex`] and [`base64`] spell bytes as text; [`crc`] is the one
+//! zig-zag; [`hex`] and [`base64`] spell bytes as text; [`utf16`] is text
+//! as the Windows protocols write it; [`crc`] is the one
 //! parameterised CRC with each protocol's as a named constant; [`sha1`] is
 //! the digest two protocols still name.
 //!
@@ -29,9 +31,11 @@ pub mod civil;
 pub mod crc;
 pub mod cursor;
 pub mod hex;
+pub mod mime;
 pub mod sha1;
 pub mod sql;
 pub mod toml;
+pub mod utf16;
 pub mod varint;
 pub mod writer;
 pub mod xml;
