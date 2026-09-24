@@ -15,6 +15,25 @@ use crate::{CodecError, Result};
 const STANDARD: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const URL_SAFE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
+/// Not a digit of the alphabet a [`values`] table was built from.
+const NOT_A_DIGIT: u8 = 0xff;
+
+/// Each byte's value in `alphabet`, or [`NOT_A_DIGIT`]: a lookup per
+/// character, where a search of the alphabet was too slow for a payload at
+/// a transport's ceiling (google-pub-sub's brim timed out, 2026-09-24).
+const fn values(alphabet: &[u8; 64]) -> [u8; 256] {
+    let mut table = [NOT_A_DIGIT; 256];
+    let mut value: u8 = 0;
+    while value < 64 {
+        table[alphabet[value as usize] as usize] = value;
+        value += 1;
+    }
+    table
+}
+
+const STANDARD_VALUES: [u8; 256] = values(STANDARD);
+const URL_SAFE_VALUES: [u8; 256] = values(URL_SAFE);
+
 /// `bytes` in base 64, padded with `=` to a multiple of four characters.
 #[must_use]
 pub fn encode(bytes: &[u8]) -> String {
@@ -37,7 +56,7 @@ pub fn encode_unpadded(bytes: &[u8]) -> String {
 /// A character outside the alphabet, padding in the wrong place, a length
 /// no encoding has, or bits set past the last byte.
 pub fn decode(text: &str) -> Result<Vec<u8>> {
-    decoding(text, STANDARD, "base 64")
+    decoding(text, &STANDARD_VALUES, "base 64")
 }
 
 /// `bytes` in base64url, padded with `=` to a multiple of four characters.
@@ -59,7 +78,7 @@ pub fn encode_url_unpadded(bytes: &[u8]) -> String {
 /// # Errors
 /// As [`decode`].
 pub fn decode_url(text: &str) -> Result<Vec<u8>> {
-    decoding(text, URL_SAFE, "base64url")
+    decoding(text, &URL_SAFE_VALUES, "base64url")
 }
 
 fn padded(mut out: String) -> String {
@@ -83,8 +102,17 @@ fn encoding(bytes: &[u8], alphabet: &[u8; 64]) -> String {
     out
 }
 
-fn decoding(text: &str, alphabet: &[u8; 64], name: &str) -> Result<Vec<u8>> {
-    let refused = |why: &str| CodecError::new(format!("not {name} ({why}): {text:?}"));
+fn decoding(text: &str, values: &[u8; 256], name: &str) -> Result<Vec<u8>> {
+    // The text is quoted only while short: a refused payload of megabytes is
+    // named by its length, not copied into the message.
+    let refused = |why: &str| {
+        let shown = if text.len() <= 80 {
+            format!("{text:?}")
+        } else {
+            format!("{} characters", text.len())
+        };
+        CodecError::new(format!("not {name} ({why}): {shown}"))
+    };
     let digits = text.trim_end_matches('=');
     let padding = text.len() - digits.len();
     if padding > 2 || (padding > 0 && !text.len().is_multiple_of(4)) {
@@ -97,11 +125,11 @@ fn decoding(text: &str, alphabet: &[u8; 64], name: &str) -> Result<Vec<u8>> {
     for chunk in digits.as_bytes().chunks(4) {
         let mut word = 0u32;
         for (index, digit) in chunk.iter().enumerate() {
-            let value = alphabet
-                .iter()
-                .position(|candidate| candidate == digit)
-                .ok_or_else(|| refused("a character outside the alphabet"))?;
-            word |= u32::try_from(value).unwrap_or(0) << (18 - 6 * index);
+            let value = values[usize::from(*digit)];
+            if value == NOT_A_DIGIT {
+                return Err(refused("a character outside the alphabet"));
+            }
+            word |= u32::from(value) << (18 - 6 * index);
         }
         let whole = chunk.len() - 1;
         let bytes = word.to_be_bytes();
