@@ -115,6 +115,89 @@ impl CivilTime {
     }
 }
 
+/// Nanoseconds in a second.
+const NANOS_A_SECOND: i128 = 1_000_000_000;
+
+/// RFC 3339 in UTC to the nanosecond, `unix_nanos` after the epoch:
+/// `2026-09-10T12:00:00.000000042Z`. What an audit record and an
+/// Event's `time` are stamped with.
+#[must_use]
+pub fn rfc3339_nanos(unix_nanos: i128) -> String {
+    let seconds = i64::try_from(unix_nanos.div_euclid(NANOS_A_SECOND)).unwrap_or(0);
+    let nanos = unix_nanos.rem_euclid(NANOS_A_SECOND);
+    let whole = CivilTime::from_unix(seconds).rfc3339();
+
+    format!("{}.{nanos:09}Z", whole.trim_end_matches('Z'))
+}
+
+/// An RFC 3339 `date-time` (section 5.6) as nanoseconds since the epoch:
+/// a fraction of any length to the nanosecond, `Z` or a numeric offset,
+/// `T` or `t` between. `None` for anything else, or a field out of range.
+#[must_use]
+pub fn read_rfc3339(text: &str) -> Option<i128> {
+    let bytes = text.as_bytes();
+    let number = |from: usize, to: usize| -> Option<u32> {
+        let digits = text.get(from..to)?;
+        digits
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+            .then(|| digits.parse().ok())?
+    };
+    let shaped = bytes.len() >= 20
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && matches!(bytes[10], b'T' | b't')
+        && bytes[13] == b':'
+        && bytes[16] == b':';
+    if !shaped {
+        return None;
+    }
+    let moment = CivilTime::new(
+        i64::from(number(0, 4)?),
+        number(5, 7)?,
+        number(8, 10)?,
+        number(11, 13)?,
+        number(14, 16)?,
+        number(17, 19)?,
+    )?;
+
+    let mut at = 19;
+    let mut nanos: i128 = 0;
+    if bytes[at] == b'.' {
+        let start = at + 1;
+        at = start;
+        while at < bytes.len() && bytes[at].is_ascii_digit() {
+            at += 1;
+        }
+        let fraction = text.get(start..at)?;
+        if fraction.is_empty() {
+            return None;
+        }
+        let kept = &fraction[..fraction.len().min(9)];
+        nanos = kept.parse::<i128>().ok()? * 10_i128.pow(9 - u32::try_from(kept.len()).ok()?);
+    }
+
+    let offset = match text.get(at..)? {
+        "Z" | "z" => 0,
+        zone if zone.len() == 6 && zone.as_bytes()[3] == b':' => {
+            let sign = match zone.as_bytes()[0] {
+                b'+' => 1,
+                b'-' => -1,
+                _ => return None,
+            };
+            let hours = number(at + 1, at + 3)?;
+            let minutes = number(at + 4, at + 6)?;
+            if hours > 23 || minutes > 59 {
+                return None;
+            }
+            sign * (i64::from(hours) * 3_600 + i64::from(minutes) * 60)
+        }
+        _ => return None,
+    };
+
+    Some(i128::from(moment.unix() - offset) * NANOS_A_SECOND + nanos)
+}
+
 /// Whole seconds from the epoch to `at`, zero for a moment before it.
 #[must_use]
 pub fn unix_seconds(at: SystemTime) -> i64 {
@@ -245,5 +328,34 @@ mod tests {
             .expect("earlier");
         assert_eq!(CivilTime::from_system_time(before), at(1970, 1, 1, 0, 0, 0));
         assert!(CivilTime::now().year >= 2026);
+    }
+
+    #[test]
+    fn rfc_3339_to_the_nanosecond_is_written_and_read_back() {
+        let moment = i128::from(at(2026, 9, 10, 12, 0, 0).unix()) * 1_000_000_000 + 42;
+
+        assert_eq!(rfc3339_nanos(moment), "2026-09-10T12:00:00.000000042Z");
+        assert_eq!(read_rfc3339(&rfc3339_nanos(moment)), Some(moment));
+        assert_eq!(read_rfc3339("2026-09-10T12:00:00Z"), Some(moment - 42));
+        assert_eq!(
+            read_rfc3339("2026-09-10T14:00:00.5+02:00"),
+            Some(moment - 42 + 500_000_000),
+            "an offset is taken off, a short fraction is tenths"
+        );
+        assert_eq!(
+            read_rfc3339("2018-04-05T17:31:00Z").map(|n| n % 1_000_000_000),
+            Some(0)
+        );
+        for wrong in [
+            "",
+            "2026-09-10",
+            "2026-09-10 12:00:00Z",
+            "2026-13-10T12:00:00Z",
+            "2026-09-10T12:00:00",
+            "2026-09-10T12:00:00.Z",
+            "2026-09-10T12:00:00+2:00",
+        ] {
+            assert_eq!(read_rfc3339(wrong), None, "{wrong}");
+        }
     }
 }

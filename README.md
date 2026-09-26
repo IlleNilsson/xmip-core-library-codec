@@ -13,14 +13,15 @@ name could be two principals. One copy lives here, and every reader uses it.
 | `base64` | Base 64 (RFC 4648 section 4) and base64url (section 5), padded or not, and a strict decoder: nothing outside the alphabet, padding only where the length needs it, no bits past the last byte |
 | `char_reader` | `CharReader`, the character reader every lexer walks its text with: positions always on a character boundary, lines and columns kept, Unicode whitespace skipped whole |
 | `civil` | The civil calendar: `CivilTime`, seconds since the epoch to a UTC date and time of day and back, the weekday, RFC 3339 |
-| `crc` | `Crc`, the one CRC, parameterised as the CRC catalogue writes each down, and each CRC a protocol frames with as a named constant held to its catalogue check value: `CRC_16_KERMIT` (IEEE 802.15.4), `CRC_16_DNP`, `CRC_16_EN_13757`, `CRC_32_ISCSI` (CRC-32C), `CRC_8_TS_27_010` (RFCOMM) |
+| `crc` | `Crc`, the one CRC, parameterised as the CRC catalogue writes each down, and each CRC a protocol frames with as a named constant held to its catalogue check value: `CRC_16_KERMIT` (IEEE 802.15.4), `CRC_16_DNP`, `CRC_16_EN_13757`, `CRC_32_ISCSI` (CRC-32C), `CRC_8_TS_27_010` (RFCOMM). `checksum` is a method of each register width, not of any, so it is compiled here, optimized, and not unoptimized in each debug caller: a Kafka batch took over 400 µs to check that way until 2026-09-26 |
 | `cursor` | `Cursor`, the one byte cursor a binary message's fields are read with: bytes, NUL-terminated fields, varints, and integers and floats in either byte order, never past the end |
 | `hex` | Base 16: bytes as lower-case hex pairs, and either case back |
 | `mime` | A header's media type and its parameters (RFC 2045), and a multipart body (RFC 2046) written and read: `Part`, its headers and its bytes, a delimiter only at the start of a line, a boundary unique to the process |
 | `sha1` | SHA-1 (FIPS 180-4), for the two protocols that still name it: the WebSocket accept key and `MySQL`'s native password |
 | `sql` | `Delimiter`: SQL's delimited text — a `'…'` literal, an `"…"`, `[…]` or backtick identifier — written with the closing delimiter doubled and read back with the doubling undone; which delimiter, and anything else a server adds, is the dialect's |
 | `toml` | Quoting text as a TOML 1.0 basic string, every control character escaped, and reading one back strictly |
-| `utf16` | UTF-16 little-endian, as NTLM, SMB2 and TDS write text: a strict reading that refuses an odd length or an unpaired surrogate, and a lossy one for text a transport only carries |
+| `unicode` | `Form`: Unicode's encoding forms — UTF-8 (the default), UTF-16 and UTF-32 in either byte order — named by the word a setting declares (`utf-8`, `utf-16le`, …), encoded and decoded strictly: bytes that are not the declared form are refused, never repaired (ADR-0038, amendment 2026-09-26) |
+| `utf16` | UTF-16 in either byte order; little-endian as NTLM, SMB2 and TDS write text: a strict reading that refuses an odd length or an unpaired surrogate, and a lossy one for a protocol's own name that is only shown, never a payload |
 | `varint` | The base-128 varint (unsigned LEB128) and the zig-zag mapping of a signed integer onto it |
 | `writer` | `ByteWriter`, the one byte writer, on `Vec<u8>`: the counterpart of `Cursor` |
 | `xml` | Escaping text and attribute values, and unescaping the five predefined entities and character references |

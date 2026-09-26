@@ -74,6 +74,7 @@ pub fn encode(value: u64) -> Vec<u8> {
 }
 
 /// `value` as a varint, appended to `out`.
+#[inline]
 pub fn encode_into(out: &mut Vec<u8>, mut value: u64) {
     loop {
         let low = u8::try_from(value & 0x7f).unwrap_or(0);

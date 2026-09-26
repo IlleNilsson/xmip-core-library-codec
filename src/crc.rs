@@ -75,10 +75,30 @@ pub struct Crc<R> {
     pub check: R,
 }
 
+/// The CRC of `bytes` for each register width, as a method of that width
+/// rather than of any `R`: a generic method is compiled in the crate that
+/// calls it, unoptimized in a debug build — a Kafka record batch of 600
+/// bytes took over 400 µs to check that way (2026-09-26) — while a method
+/// of one width is compiled here, optimized as every dependency is
+/// (rust-style.md 5b).
+macro_rules! checksum {
+    ($($width:ty),*) => {$(
+        impl Crc<$width> {
+            /// The CRC of `bytes`.
+            #[must_use]
+            #[inline(never)]
+            pub fn checksum(&self, bytes: &[u8]) -> $width {
+                self.of(bytes)
+            }
+        }
+    )*};
+}
+
+checksum!(u8, u16, u32, u64);
+
 impl<R: Register> Crc<R> {
-    /// The CRC of `bytes`.
-    #[must_use]
-    pub fn checksum(&self, bytes: &[u8]) -> R {
+    /// The CRC of `bytes`, bit by bit as the catalogue defines it.
+    fn of(&self, bytes: &[u8]) -> R {
         let register = if self.reflect_in {
             let polynomial = self.polynomial.reflect();
             bytes
