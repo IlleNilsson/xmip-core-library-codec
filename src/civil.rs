@@ -9,7 +9,8 @@
 //! of it, and HTTP and the location authorizer each their own weekday.
 //! How a moment is written as text — RFC 1123, `x-amz-date`, a SAML
 //! `dateTime` — stays with the protocol; RFC 3339, which four of them
-//! write, is here.
+//! write, is here, and so are its date, time and offset read one by one:
+//! the JSON Schema and XML Schema contracts check those formats with them.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -130,72 +131,113 @@ pub fn rfc3339_nanos(unix_nanos: i128) -> String {
     format!("{}.{nanos:09}Z", whole.trim_end_matches('Z'))
 }
 
+/// A time of day to the nanosecond, as RFC 3339's `partial-time` writes it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TimeOfDay {
+    /// 0 to 23.
+    pub hour: u32,
+    /// 0 to 59.
+    pub minute: u32,
+    /// 0 to 59, or 60 for a leap second.
+    pub second: u32,
+    /// 0 to 999 999 999; a fraction finer than a nanosecond is cut.
+    pub nanos: u32,
+}
+
+/// The number `text` spells in ASCII digits and nothing else.
+fn digits(text: &str) -> Option<u32> {
+    (!text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
+        .then(|| text.parse().ok())?
+}
+
+/// An RFC 3339 `full-date`, `2026-09-27`: year, month and day, each field
+/// in its range, so the thirty-first of February is none.
+#[must_use]
+pub fn read_date(text: &str) -> Option<(i64, u32, u32)> {
+    let bytes = text.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return None;
+    }
+    let (year, month, day) = (
+        i64::from(digits(&text[..4])?),
+        digits(&text[5..7])?,
+        digits(&text[8..])?,
+    );
+    let valid = (1..=12).contains(&month) && day >= 1 && day <= days_in_month(year, month);
+    valid.then_some((year, month, day))
+}
+
+/// An RFC 3339 `partial-time` at the start of `text`, `13:45:00.25`, and
+/// what follows it: the offset, or nothing.
+#[must_use]
+pub fn read_time(text: &str) -> Option<(TimeOfDay, &str)> {
+    let bytes = text.as_bytes();
+    if bytes.len() < 8 || bytes[2] != b':' || bytes[5] != b':' {
+        return None;
+    }
+    let (hour, minute, second) = (
+        digits(text.get(..2)?)?,
+        digits(text.get(3..5)?)?,
+        digits(text.get(6..8)?)?,
+    );
+    if hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+    let mut at = 8;
+    let mut nanos = 0;
+    if bytes.get(at) == Some(&b'.') {
+        let start = at + 1;
+        at = start;
+        while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+            at += 1;
+        }
+        let fraction = &text[start..at];
+        if fraction.is_empty() {
+            return None;
+        }
+        let kept = &fraction[..fraction.len().min(9)];
+        nanos = digits(kept)? * 10_u32.pow(9 - u32::try_from(kept.len()).ok()?);
+    }
+    let time = TimeOfDay {
+        hour,
+        minute,
+        second,
+        nanos,
+    };
+    Some((time, &text[at..]))
+}
+
+/// An RFC 3339 `time-offset`, `Z` or `+02:00`, as seconds east of UTC.
+#[must_use]
+pub fn read_offset(text: &str) -> Option<i64> {
+    let bytes = text.as_bytes();
+    match bytes {
+        [b'Z' | b'z'] => Some(0),
+        [sign @ (b'+' | b'-'), _, _, b':', _, _] => {
+            let hours = digits(&text[1..3])?;
+            let minutes = digits(&text[4..])?;
+            if hours > 23 || minutes > 59 {
+                return None;
+            }
+            let east = i64::from(hours) * 3_600 + i64::from(minutes) * 60;
+            Some(if *sign == b'-' { -east } else { east })
+        }
+        _ => None,
+    }
+}
+
 /// An RFC 3339 `date-time` (section 5.6) as nanoseconds since the epoch:
 /// a fraction of any length to the nanosecond, `Z` or a numeric offset,
 /// `T` or `t` between. `None` for anything else, or a field out of range.
 #[must_use]
 pub fn read_rfc3339(text: &str) -> Option<i128> {
-    let bytes = text.as_bytes();
-    let number = |from: usize, to: usize| -> Option<u32> {
-        let digits = text.get(from..to)?;
-        digits
-            .bytes()
-            .all(|byte| byte.is_ascii_digit())
-            .then(|| digits.parse().ok())?
-    };
-    let shaped = bytes.len() >= 20
-        && bytes[4] == b'-'
-        && bytes[7] == b'-'
-        && matches!(bytes[10], b'T' | b't')
-        && bytes[13] == b':'
-        && bytes[16] == b':';
-    if !shaped {
-        return None;
-    }
-    let moment = CivilTime::new(
-        i64::from(number(0, 4)?),
-        number(5, 7)?,
-        number(8, 10)?,
-        number(11, 13)?,
-        number(14, 16)?,
-        number(17, 19)?,
-    )?;
-
-    let mut at = 19;
-    let mut nanos: i128 = 0;
-    if bytes[at] == b'.' {
-        let start = at + 1;
-        at = start;
-        while at < bytes.len() && bytes[at].is_ascii_digit() {
-            at += 1;
-        }
-        let fraction = text.get(start..at)?;
-        if fraction.is_empty() {
-            return None;
-        }
-        let kept = &fraction[..fraction.len().min(9)];
-        nanos = kept.parse::<i128>().ok()? * 10_i128.pow(9 - u32::try_from(kept.len()).ok()?);
-    }
-
-    let offset = match text.get(at..)? {
-        "Z" | "z" => 0,
-        zone if zone.len() == 6 && zone.as_bytes()[3] == b':' => {
-            let sign = match zone.as_bytes()[0] {
-                b'+' => 1,
-                b'-' => -1,
-                _ => return None,
-            };
-            let hours = number(at + 1, at + 3)?;
-            let minutes = number(at + 4, at + 6)?;
-            if hours > 23 || minutes > 59 {
-                return None;
-            }
-            sign * (i64::from(hours) * 3_600 + i64::from(minutes) * 60)
-        }
-        _ => return None,
-    };
-
-    Some(i128::from(moment.unix() - offset) * NANOS_A_SECOND + nanos)
+    let (date, rest) = (text.get(..10)?, text.get(10..)?);
+    let rest = rest.strip_prefix(['T', 't'])?;
+    let (year, month, day) = read_date(date)?;
+    let (time, zone) = read_time(rest)?;
+    let offset = read_offset(zone)?;
+    let moment = CivilTime::new(year, month, day, time.hour, time.minute, time.second)?;
+    Some(i128::from(moment.unix() - offset) * NANOS_A_SECOND + i128::from(time.nanos))
 }
 
 /// Whole seconds from the epoch to `at`, zero for a moment before it.
@@ -356,6 +398,47 @@ mod tests {
             "2026-09-10T12:00:00+2:00",
         ] {
             assert_eq!(read_rfc3339(wrong), None, "{wrong}");
+        }
+    }
+
+    #[test]
+    fn a_date_a_time_and_an_offset_are_read_each_in_its_range() {
+        assert_eq!(read_date("2028-02-29"), Some((2028, 2, 29)));
+        for wrong in [
+            "2026-02-29",
+            "2026-02-31",
+            "2026-04-31",
+            "2026-99-01",
+            "2026-01-99",
+            "2026-00-10",
+            "2026-1-10",
+            "2026-01-10Z",
+            "+026-01-10",
+        ] {
+            assert_eq!(read_date(wrong), None, "{wrong}");
+        }
+        let (time, rest) = read_time("13:45:00.25+02:00").expect("a time");
+        assert_eq!((time.hour, time.minute, time.second), (13, 45, 0));
+        assert_eq!(time.nanos, 250_000_000);
+        assert_eq!(rest, "+02:00");
+        assert_eq!(
+            read_time("23:59:60").map(|(t, r)| (t.second, r)),
+            Some((60, ""))
+        );
+        for wrong in [
+            "24:00:00",
+            "12:60:00",
+            "12:00:61",
+            "12:00",
+            "12:00:00.",
+            "1a:00:00",
+        ] {
+            assert_eq!(read_time(wrong), None, "{wrong}");
+        }
+        assert_eq!(read_offset("Z"), Some(0));
+        assert_eq!(read_offset("-01:30"), Some(-5_400));
+        for wrong in ["", "+2:00", "+24:00", "+02:60", "02:00", "+02:00Z"] {
+            assert_eq!(read_offset(wrong), None, "{wrong}");
         }
     }
 }

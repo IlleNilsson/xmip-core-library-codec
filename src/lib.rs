@@ -28,7 +28,7 @@
 //! source, the one place a key, salt, nonce, challenge or id is drawn.
 //!
 //! Time: [`civil`] turns seconds since the epoch into a UTC date and time
-//! of day and back.
+//! of day and back, and reads RFC 3339 dates, times and offsets.
 
 pub mod base64;
 pub mod char_reader;
