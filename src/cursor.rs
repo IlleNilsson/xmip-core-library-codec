@@ -1,4 +1,4 @@
-//! Reading a binary message's fields in order: the one byte cursor.
+//! Reading a message's bytes in order: the one byte cursor.
 //!
 //! Every binary protocol reads the same way — take the next so many bytes,
 //! never past the end, and know where it has got to. Until 2026-09-24
@@ -8,7 +8,8 @@
 //! waiting to happen. What differs between protocols is what a field means
 //! — XDR's padding, AMQP's short string, `MySQL`'s length-encoded integer —
 //! and that stays with each protocol, written over this cursor in its own
-//! words.
+//! words. A text grammar walks the same cursor: JSON, XML and an Avro
+//! schema peek, step over whitespace and take what they walked.
 
 use crate::{CodecError, Result, varint};
 
@@ -48,6 +49,28 @@ impl<'a> Cursor<'a> {
     #[must_use]
     pub fn peek(&self) -> Option<u8> {
         self.bytes.get(self.at).copied()
+    }
+
+    /// What was read from `start` up to where the cursor is: a name or a
+    /// token a grammar walked over byte by byte. Empty when `start` is not
+    /// behind the cursor.
+    #[must_use]
+    pub fn since(&self, start: usize) -> &'a [u8] {
+        self.bytes.get(start..self.at).unwrap_or(&[])
+    }
+
+    /// Past the next `count` bytes, or to the end where fewer remain: the
+    /// step a text grammar takes over what it has already peeked at.
+    pub fn advance(&mut self, count: usize) {
+        self.at = self.at.saturating_add(count).min(self.bytes.len());
+    }
+
+    /// Past any run of space, tab, carriage return and line feed: the
+    /// whitespace JSON and XML both name.
+    pub fn skip_whitespace(&mut self) {
+        while matches!(self.peek(), Some(b' ' | b'\t' | b'\r' | b'\n')) {
+            self.at += 1;
+        }
     }
 
     /// The next `count` bytes. On a refusal the cursor does not move.
@@ -232,6 +255,21 @@ mod tests {
         assert_eq!(cursor.take_until(0).expect("db"), b"db");
         assert!(cursor.take_until(0).is_err(), "no NUL ends it");
         assert_eq!(cursor.remaining(), b"rest");
+    }
+
+    #[test]
+    fn a_text_grammar_steps_over_what_it_peeked_and_takes_what_it_walked() {
+        let mut cursor = Cursor::new(b" \t\r\nname x");
+        cursor.skip_whitespace();
+        assert_eq!(cursor.position(), 4);
+        let start = cursor.position();
+        while cursor.peek().is_some_and(|byte| byte.is_ascii_alphabetic()) {
+            cursor.advance(1);
+        }
+        assert_eq!(cursor.since(start), b"name");
+        assert_eq!(cursor.since(99), b"");
+        cursor.advance(99);
+        assert!(cursor.is_empty(), "advancing stops at the end");
     }
 
     #[test]
