@@ -13,10 +13,12 @@ name could be two principals. One copy lives here, and every reader uses it.
 | `base64` | Base 64 (RFC 4648 section 4) and base64url (section 5), padded or not, and a strict decoder: nothing outside the alphabet, padding only where the length needs it, no bits past the last byte |
 | `char_reader` | `CharReader`, the character reader every lexer walks its text with: positions always on a character boundary, lines and columns kept, Unicode whitespace skipped whole |
 | `civil` | The civil calendar: `CivilTime`, seconds since the epoch to a UTC date and time of day and back, the weekday, RFC 3339 |
+| `constant_time` | `equal`: two byte strings compared in time that depends on their lengths and never on where they differ — every password, token, key, MAC and scramble in the estate is compared through it, the far ends' included |
 | `crc` | `Crc`, the one CRC, parameterised as the CRC catalogue writes each down, and each CRC a protocol frames with as a named constant held to its catalogue check value: `CRC_16_KERMIT` (IEEE 802.15.4), `CRC_16_DNP`, `CRC_16_EN_13757`, `CRC_32_ISCSI` (CRC-32C), `CRC_8_TS_27_010` (RFCOMM). `checksum` is a method of each register width, not of any, so it is compiled here, optimized, and not unoptimized in each debug caller: a Kafka batch took over 400 µs to check that way until 2026-09-26 |
 | `cursor` | `Cursor`, the one byte cursor a binary message's fields are read with: bytes, NUL-terminated fields, varints, and integers and floats in either byte order, never past the end |
 | `hex` | Base 16: bytes as lower-case hex pairs, and either case back |
-| `mime` | A header's media type and its parameters (RFC 2045), and a multipart body (RFC 2046) written and read: `Part`, its headers and its bytes, a delimiter only at the start of a line, a boundary unique to the process |
+| `mime` | A header's media type and its parameters (RFC 2045), and a multipart body (RFC 2046) written and read: `Part`, its headers and its bytes, a delimiter only at the start of a line, a boundary of 128 random bits |
+| `random` | Bytes from the operating system's random source (`getrandom`): `fill` and `array`. Every key, salt, nonce, challenge, masking key and unique id in the estate is drawn here, never from the clock or a generator seeded in the process |
 | `sha1` | SHA-1 (FIPS 180-4), for the two protocols that still name it: the WebSocket accept key and `MySQL`'s native password |
 | `sql` | `Delimiter`: SQL's delimited text — a `'…'` literal, an `"…"`, `[…]` or backtick identifier — written with the closing delimiter doubled and read back with the doubling undone; which delimiter, and anything else a server adds, is the dialect's |
 | `toml` | Quoting text as a TOML 1.0 basic string, every control character escaped, and reading one back strictly |
@@ -50,5 +52,13 @@ binary technology — Kafka, TDS, `PostgreSQL`, `MySQL`, MQTT, AMQP, XDR, OPC UA
 Oracle's TTC, SSH, Matter TLV — reads through `Cursor` and writes through
 `ByteWriter`; what a field means (XDR's padding, AMQP's short string, a
 length-encoded integer) stays in the protocol's crate, as a trait over them.
+
+Randomness followed on 2026-09-27. The WebSocket masking and handshake
+keys, the `MySQL`, Oracle and SMB server challenges, the credential store's
+salt, the Digest and SCRAM nonces, the multipart boundary and the AS2, AS4
+and NATS `JetStream` ids had each been drawn from the clock and a counter —
+a server challenge as guessable as the time. SFTP and the key home drew from
+the operating system already, each through a crate of its own. All of them
+draw through `random` now.
 
 `architecture.toml` carries the maturity.

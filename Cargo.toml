@@ -12,6 +12,11 @@ description = "Encoding primitives for Xmip: how a format's bytes and characters
 [lib]
 path = "src/lib.rs"
 
+[dependencies]
+# The operating system's random source and nothing else: no generator in
+# this process, no clock. `random` is its one caller in the estate.
+getrandom = "0.4"
+
 [lints.rust]
 # forbid, not deny: a module has no business writing unsafe. The one exception
 # in the estate is xmip-core-abi, which holds the extern "C" vtable over

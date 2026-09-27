@@ -21,7 +21,11 @@
 //! text in the encoding form a setting declares, strictly both ways;
 //! [`utf16`] is text as the Windows protocols write it; [`crc`] is the one
 //! parameterised CRC with each protocol's as a named constant; [`sha1`] is
-//! the digest two protocols still name.
+//! the digest two protocols still name; [`constant_time`] compares a
+//! secret without saying where it differs.
+//!
+//! Randomness: [`random`] fills bytes from the operating system's random
+//! source, the one place a key, salt, nonce, challenge or id is drawn.
 //!
 //! Time: [`civil`] turns seconds since the epoch into a UTC date and time
 //! of day and back.
@@ -29,10 +33,12 @@
 pub mod base64;
 pub mod char_reader;
 pub mod civil;
+pub mod constant_time;
 pub mod crc;
 pub mod cursor;
 pub mod hex;
 pub mod mime;
+pub mod random;
 pub mod sha1;
 pub mod sql;
 pub mod toml;

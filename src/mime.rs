@@ -8,8 +8,8 @@
 //! body; a part's bytes are exactly what lies between its blank line and
 //! the next delimiter, less the line break that belongs to the delimiter.
 //! The preamble and the epilogue are dropped. Every part is written
-//! `binary`: its bytes as they are, between a boundary [`boundary`] makes
-//! unique to this process.
+//! `binary`: its bytes as they are, between a boundary [`boundary`] draws
+//! at random.
 //!
 //! Until 2026-09-24 AS2's receipt, AS4's SOAP with attachments and MSMQ's
 //! SRMP each wrote and read a multipart body of their own, and the message
@@ -18,8 +18,7 @@
 //! AS2 read a boundary parameter only in lower case with nothing around
 //! its `=`.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use crate::{hex, random};
 
 /// The longest boundary RFC 2046 allows.
 const BOUNDARY_MAX: usize = 70;
@@ -124,16 +123,12 @@ impl core::fmt::Display for Refusal {
 
 impl core::error::Error for Refusal {}
 
-/// A boundary no body from this process is written around: the moment and
-/// a count, so two in one nanosecond still differ.
+/// A boundary no other body is written around: 128 random bits, so neither
+/// another message nor a part's own bytes carries it but by a chance of one
+/// in 2^128.
 #[must_use]
 pub fn boundary() -> String {
-    static COUNT: AtomicU64 = AtomicU64::new(0);
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| since.as_nanos());
-    let count = COUNT.fetch_add(1, Ordering::Relaxed);
-    format!("=_xmip_{nanos:x}_{count:x}")
+    format!("=_xmip_{}", hex::encode(&random::array::<16>()))
 }
 
 /// `parts` as one multipart body under `boundary`.
