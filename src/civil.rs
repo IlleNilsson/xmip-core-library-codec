@@ -64,7 +64,7 @@ impl CivilTime {
 
     /// The moment `seconds` after the epoch.
     #[must_use]
-    pub fn from_unix(seconds: i64) -> Self {
+    fn from_unix(seconds: i64) -> Self {
         let (year, month, day) = civil_from_days(seconds.div_euclid(SECONDS_A_DAY));
         let of_day = seconds.rem_euclid(SECONDS_A_DAY);
         let part = |value: i64| u32::try_from(value).unwrap_or(0);
@@ -252,7 +252,7 @@ pub fn unix_seconds(at: SystemTime) -> i64 {
 /// Days from 1970-01-01 to the civil date `year`-`month`-`day`, negative
 /// before it. The date is taken as given; [`CivilTime::new`] checks one.
 #[must_use]
-pub fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
     let (month, day) = (i64::from(month), i64::from(day));
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
@@ -264,7 +264,7 @@ pub fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
 
 /// The civil date `days` after 1970-01-01: year, month 1 to 12, day 1 to 31.
 #[must_use]
-pub fn civil_from_days(days: i64) -> (i64, u32, u32) {
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let shifted = days + 719_468;
     let era = shifted.div_euclid(146_097);
     let day_of_era = shifted.rem_euclid(146_097);
@@ -292,7 +292,7 @@ pub fn weekday(days: i64) -> u32 {
 
 /// Days in `month` of `year`.
 #[must_use]
-pub fn days_in_month(year: i64, month: u32) -> u32 {
+fn days_in_month(year: i64, month: u32) -> u32 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,

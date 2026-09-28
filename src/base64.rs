@@ -59,12 +59,6 @@ pub fn decode(text: &str) -> Result<Vec<u8>> {
     decoding(text, &STANDARD_VALUES, "base 64")
 }
 
-/// `bytes` in base64url, padded with `=` to a multiple of four characters.
-#[must_use]
-pub fn encode_url(bytes: &[u8]) -> String {
-    padded(encoding(bytes, URL_SAFE))
-}
-
 /// `bytes` in base64url without the padding, as a JWS writes each part
 /// (RFC 7515 section 2).
 #[must_use]
@@ -201,7 +195,6 @@ mod tests {
             assert_eq!(decode(encoded).expect("padded"), text.as_bytes(), "{text}");
             assert_eq!(decode(bare).expect("unpadded"), text.as_bytes(), "{text}");
             // The alphabets differ only past `9`, which none of these reach.
-            assert_eq!(encode_url(text.as_bytes()), encoded, "{text}");
             assert_eq!(encode_url_unpadded(text.as_bytes()), bare, "{text}");
             assert_eq!(decode_url(bare).expect("url"), text.as_bytes(), "{text}");
         }
@@ -211,7 +204,6 @@ mod tests {
     fn the_url_alphabet_spells_62_and_63_as_minus_and_underscore() {
         // RFC 4648 section 5: 0xfb 0xff is `-_8` where section 4 has `+/8`.
         assert_eq!(encode(&[0xfb, 0xff]), "+/8=");
-        assert_eq!(encode_url(&[0xfb, 0xff]), "-_8=");
         assert_eq!(encode_url_unpadded(&[0xfb, 0xff]), "-_8");
         assert_eq!(decode_url("-_8").expect("url"), [0xfb, 0xff]);
         assert!(
