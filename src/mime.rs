@@ -16,9 +16,10 @@
 //! capability a fourth: MSMQ took a boundary in the middle of a line as a
 //! delimiter, AS2 split the body wherever the boundary's text appeared, and
 //! AS2 read a boundary parameter only in lower case with nothing around
-//! its `=`.
+//! its `=`. Until 2026-09-28 AS2 and MSMQ each checked the type a boundary
+//! was declared under themselves ([`boundary_of`]).
 
-use crate::{hex, random};
+use crate::{CodecError, hex, random};
 
 /// The longest boundary RFC 2046 allows.
 const BOUNDARY_MAX: usize = 70;
@@ -155,12 +156,39 @@ pub fn opening_boundary(bytes: &[u8]) -> Option<&str> {
     let rest = bytes.strip_prefix(b"--")?;
     let end = rest.iter().position(|b| *b == b'\r' || *b == b'\n')?;
     let boundary = rest[..end].trim_ascii_end();
-    let sound = !boundary.is_empty()
+    // A first line with a space in it is prose sooner than a boundary.
+    (sound(boundary) && !boundary.contains(&b' '))
+        .then(|| std::str::from_utf8(boundary).ok())
+        .flatten()
+}
+
+/// The boundary `content_type` declares, where its media type is
+/// `multipart` — `multipart/report`, `multipart/related` — compared
+/// without regard to case.
+///
+/// # Errors
+/// Where the media type is another, or its boundary is missing or is not
+/// one RFC 2046 allows: 1 to 70 of its characters, the last not a space.
+pub fn boundary_of<'a>(content_type: &'a str, multipart: &str) -> Result<&'a str, CodecError> {
+    if !media_type(content_type).eq_ignore_ascii_case(multipart) {
+        return Err(CodecError::new(format!(
+            "a {multipart} body was due, and the type is {content_type:?}"
+        )));
+    }
+    parameter(content_type, "boundary")
+        .filter(|boundary| sound(boundary.as_bytes()))
+        .ok_or_else(|| CodecError::new(format!("a {multipart} type naming no sound boundary")))
+}
+
+/// Whether `boundary` is one RFC 2046 section 5.1.1 allows: 1 to 70 of
+/// its characters, the last not a space.
+fn sound(boundary: &[u8]) -> bool {
+    !boundary.is_empty()
         && boundary.len() <= BOUNDARY_MAX
+        && boundary.last() != Some(&b' ')
         && boundary
             .iter()
-            .all(|b| b.is_ascii_alphanumeric() || b"'()+_,-./:=?".contains(b));
-    sound.then(|| std::str::from_utf8(boundary).ok()).flatten()
+            .all(|b| b.is_ascii_alphanumeric() || b"'()+_,-./:=? ".contains(b))
 }
 
 /// The parts between the delimiters of `boundary`.
@@ -280,6 +308,28 @@ fn headers(head: &str) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_boundary_is_read_from_its_multipart_type_and_nothing_else() {
+        let related = "Multipart/Related; type=text/xml; boundary=\"q r\"";
+        assert_eq!(
+            boundary_of(related, "multipart/related").expect("ok"),
+            "q r"
+        );
+        assert!(
+            boundary_of(related, "multipart/report").is_err(),
+            "another type"
+        );
+        assert!(boundary_of("multipart/related", "multipart/related").is_err());
+        assert!(boundary_of("multipart/related; boundary=", "multipart/related").is_err());
+        let long = format!("multipart/related; boundary={}", "b".repeat(71));
+        assert!(boundary_of(&long, "multipart/related").is_err(), "over 70");
+        let spaced = "multipart/related; boundary=\"b \"";
+        assert!(
+            boundary_of(spaced, "multipart/related").is_err(),
+            "ends in a space"
+        );
+    }
 
     #[test]
     fn a_parameter_is_found_by_name_regardless_of_case_and_unquoted() {

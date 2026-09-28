@@ -127,7 +127,7 @@ impl<'a> Cursor<'a> {
     ///
     /// # Errors
     /// Fewer than `N` bytes remain.
-    pub fn take_array<const N: usize>(&mut self) -> Result<[u8; N]> {
+    fn take_array<const N: usize>(&mut self) -> Result<[u8; N]> {
         let mut out = [0u8; N];
         out.copy_from_slice(self.take(N)?);
         Ok(out)
