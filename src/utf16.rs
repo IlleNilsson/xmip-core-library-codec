@@ -1,6 +1,6 @@
 //! UTF-16: two bytes a code unit, and the bytes back to text. Little-endian
 //! is how the Windows protocols write it, low byte first; big-endian is
-//! the other byte order Unicode names, for a partner who declares it.
+//! the other byte order Unicode names, for a Party that declares it.
 //!
 //! NTLM names its user, domain and workstation in it, SMB2 its paths and
 //! file names, TDS (where it is called UCS-2) its login and its SQL. Until
