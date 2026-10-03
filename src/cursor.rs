@@ -187,9 +187,11 @@ numbers! {
     u16: u16_be, u16_le;
     u32: u32_be, u32_le;
     u64: u64_be, u64_le;
+    u128: u128_be, u128_le;
     i16: i16_be, i16_le;
     i32: i32_be, i32_le;
     i64: i64_be, i64_le;
+    i128: i128_be, i128_le;
     f32: f32_be, f32_le;
     f64: f64_be, f64_le;
 }

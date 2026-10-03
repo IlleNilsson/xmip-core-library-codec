@@ -36,6 +36,7 @@ pub mod civil;
 pub mod constant_time;
 pub mod crc;
 pub mod cursor;
+pub mod field;
 pub mod hex;
 pub mod mime;
 pub mod random;
