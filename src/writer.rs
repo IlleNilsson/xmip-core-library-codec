@@ -59,6 +59,16 @@ pub trait ByteWriter {
         self.bytes(&value.to_le_bytes())
     }
 
+    /// `value`, big-endian: an identifier, a `UUIDv7` among them.
+    fn u128_be(&mut self, value: u128) -> &mut Self {
+        self.bytes(&value.to_be_bytes())
+    }
+
+    /// `value`, little-endian.
+    fn u128_le(&mut self, value: u128) -> &mut Self {
+        self.bytes(&value.to_le_bytes())
+    }
+
     /// `value`, big-endian.
     fn i16_be(&mut self, value: i16) -> &mut Self {
         self.bytes(&value.to_be_bytes())
@@ -86,6 +96,17 @@ pub trait ByteWriter {
 
     /// `value`, little-endian.
     fn i64_le(&mut self, value: i64) -> &mut Self {
+        self.bytes(&value.to_le_bytes())
+    }
+
+    /// `value`, big-endian: a time in nanoseconds, the unit of
+    /// `xcore::Clock`, among them.
+    fn i128_be(&mut self, value: i128) -> &mut Self {
+        self.bytes(&value.to_be_bytes())
+    }
+
+    /// `value`, little-endian.
+    fn i128_le(&mut self, value: i128) -> &mut Self {
         self.bytes(&value.to_le_bytes())
     }
 
@@ -144,6 +165,10 @@ mod tests {
             .i32_le(-70_000)
             .i64_be(i64::MIN)
             .i64_le(i64::MIN)
+            .u128_be(u128::MAX - 1)
+            .u128_le(7)
+            .i128_be(-5)
+            .i128_le(i128::MIN)
             .f32_be(1.5)
             .f32_le(1.5)
             .f64_be(-0.25)
@@ -166,6 +191,10 @@ mod tests {
         assert_eq!(cursor.i32_le().expect("i32"), -70_000);
         assert_eq!(cursor.i64_be().expect("i64"), i64::MIN);
         assert_eq!(cursor.i64_le().expect("i64"), i64::MIN);
+        assert_eq!(cursor.u128_be().expect("u128"), u128::MAX - 1);
+        assert_eq!(cursor.u128_le().expect("u128"), 7);
+        assert_eq!(cursor.i128_be().expect("i128"), -5);
+        assert_eq!(cursor.i128_le().expect("i128"), i128::MIN);
         assert!((cursor.f32_be().expect("f32") - 1.5).abs() < f32::EPSILON);
         assert!((cursor.f32_le().expect("f32") - 1.5).abs() < f32::EPSILON);
         assert!((cursor.f64_be().expect("f64") + 0.25).abs() < f64::EPSILON);
