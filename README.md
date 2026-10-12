@@ -20,8 +20,7 @@ name could be two principals. One copy lives here, and every reader uses it.
 | `hex` | Base 16: bytes as lower-case hex pairs, and either case back; and a number in hex — `number`, the digits alone as wide as the caller's integer, and `prefixed_number`, the `0x7e8` a target names a CAN identifier, an object index or a node address in — never with a sign. Until 2026-09-28 eleven technologies read those with `from_str_radix`, each taking `0x+7e8` |
 | `mime` | A header's media type and its parameters (RFC 2045), and a multipart body (RFC 2046) written and read: `Part`, its headers and its bytes, a delimiter only at the start of a line, a boundary of 128 random bits, and `boundary_of`, the boundary a multipart type declares, refused where the type is another or the boundary not one RFC 2046 allows — AS2's receipt and MSMQ's SRMP read it here, where until 2026-09-28 each checked it itself |
 | `random` | Bytes from the operating system's random source (`getrandom`): `fill` and `array`. Every key, salt, nonce, challenge, masking key and unique id in the estate is drawn here, never from the clock or a generator seeded in the process |
-| `sha1` | SHA-1 (FIPS 180-4), for the two protocols that still name it: the WebSocket accept key and `MySQL`'s native password |
-| `sql` | `Delimiter`: SQL's delimited text — a `'…'` literal, an `"…"`, `[…]` or backtick identifier — written with the closing delimiter doubled and read back with the doubling undone; which delimiter, and anything else a server adds, is the dialect's |
+| `sha1` | SHA-1 (FIPS 180-4), for the two protocols that still name it: the WebSocket accept key and `MariaDB`'s native password |
 | `toml` | Quoting text as a TOML 1.0 basic string, every control character escaped, and reading one back strictly |
 | `unicode` | `Form`: Unicode's encoding forms — UTF-8 (the default), UTF-16 and UTF-32 in either byte order — named by the word a setting declares (`utf-8`, `utf-16le`, …), encoded and decoded strictly: bytes that are not the declared form are refused, never repaired (ADR-0038, amendment 2026-09-26) |
 | `utf16` | UTF-16 in either byte order; little-endian as NTLM, SMB2 and TDS write text: a strict reading that refuses an odd length or an unpaired surrogate, and a lossy one for a protocol's own name that is only shown, never a payload |
@@ -34,10 +33,7 @@ proto3 language and the SQL archive's statement read through `CharReader`.
 Until 2026-09-24 each counted positions itself, and two stepped over
 whitespace a byte at a time and panicked inside U+00A0. The node's
 declaration and the file archive's sidecar quote through `toml`; the node's
-own copy escaped three characters. The SQL Server, `MySQL` and `PostgreSQL`
-transports, the SQL script archive and the SQL contract's lexer quote and
-read SQL through `sql`; until 2026-09-24 each wrote the rule itself, and two
-far ends read a doubled identifier delimiter as the identifier's end.
+own copy escaped three characters.
 
 AS2's receipt, AS4's SOAP with attachments, MSMQ's SRMP and the message
 capability's multipart shape write and read MIME through `mime`; until
@@ -49,13 +45,13 @@ three, SHA-1 twice, a CRC five times, a byte cursor fourteen, the varint and
 its zig-zag five and the civil calendar seven, one of them inside
 `xmip-core-library-asn1`, which now reads a `GeneralizedTime` through `civil`.
 The transport capability's own cursor, hex and CRC went with them. Every
-binary technology — Kafka, TDS, `PostgreSQL`, `MySQL`, MQTT, AMQP, XDR, OPC UA,
-Oracle's TTC, SSH, Matter TLV — reads through `Cursor` and writes through
+binary technology — Kafka, TDS, `PostgreSQL`, `MariaDB`, MQTT, AMQP, XDR, OPC UA,
+SSH, Matter TLV — reads through `Cursor` and writes through
 `ByteWriter`; what a field means (XDR's padding, AMQP's short string, a
 length-encoded integer) stays in the protocol's crate, as a trait over them.
 
 Randomness followed on 2026-09-27. The WebSocket masking and handshake
-keys, the `MySQL`, Oracle and SMB server challenges, the credential store's
+keys, the `MariaDB` and SMB server challenges, the credential store's
 salt, the Digest and SCRAM nonces, the multipart boundary and the AS2, AS4
 and NATS `JetStream` ids had each been drawn from the clock and a counter —
 a server challenge as guessable as the time. SFTP and the key home drew from

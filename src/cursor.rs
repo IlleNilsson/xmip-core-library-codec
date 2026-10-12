@@ -6,7 +6,7 @@
 //! three technologies wrapping it, eight technologies with their own, the
 //! SSH key reader and the Matter TLV reader, each with its own off-by-one
 //! waiting to happen. What differs between protocols is what a field means
-//! — XDR's padding, AMQP's short string, `MySQL`'s length-encoded integer —
+//! — XDR's padding, AMQP's short string, `MariaDB`'s length-encoded integer —
 //! and that stays with each protocol, written over this cursor in its own
 //! words. A text grammar walks the same cursor: JSON, XML and an Avro
 //! schema peek, step over whitespace and take what they walked.

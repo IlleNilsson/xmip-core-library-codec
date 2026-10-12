@@ -4,7 +4,7 @@
 //! A message is built in a `Vec<u8>`, and [`ByteWriter`] is what writing a
 //! field into one means: a byte, bytes, a number in either byte order, a
 //! varint. Until 2026-09-24 Kafka, AMQP, `RabbitMQ`, XDR, OPC UA, SFTP and
-//! `MySQL` each carried their own `put_u32` or writer type around
+//! `MariaDB` each carried their own `put_u32` or writer type around
 //! `extend_from_slice(&value.to_be_bytes())`. What a field means — a
 //! counted string, padding to four — stays with each protocol, written
 //! over this in its own words.

@@ -1,5 +1,5 @@
 //! SHA-1 (FIPS 180-4 section 6.1), where a protocol still names it: the
-//! WebSocket accept key (RFC 6455) and `MySQL`'s native password.
+//! WebSocket accept key (RFC 6455) and `MariaDB`'s native password.
 //!
 //! Broken for what a hash is meant for, and never chosen by Xmip where it
 //! has the choice; the estate's archives and signatures use SHA-256. Until
