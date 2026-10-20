@@ -81,7 +81,7 @@ impl Part {
         self
     }
 
-    /// One header's value, however its name was capitalised.
+    /// One header's value, however its name was capitalized.
     #[must_use]
     pub fn header_value(&self, name: &str) -> Option<&str> {
         self.headers
