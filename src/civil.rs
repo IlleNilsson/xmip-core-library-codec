@@ -240,6 +240,76 @@ pub fn read_rfc3339(text: &str) -> Option<i128> {
     Some(i128::from(moment.unix() - offset) * NANOS_A_SECOND + i128::from(time.nanos))
 }
 
+/// An ISO 8601 duration, `P1DT2H30M` or `PT0.5S`, as nanoseconds: weeks,
+/// days, hours, minutes and seconds, a fraction on the seconds alone.
+/// `None` for anything else, and for years and months, whose length is
+/// the calendar's to say and never a fixed number of seconds.
+#[must_use]
+pub fn read_duration(text: &str) -> Option<u64> {
+    let rest = text.strip_prefix(['P', 'p'])?;
+    let (date, time) = match rest.split_once(['T', 't']) {
+        Some((date, time)) if !time.is_empty() => (date, Some(time)),
+        Some(_) => return None,
+        None => (rest, None),
+    };
+    if date.is_empty() && time.is_none() {
+        return None;
+    }
+    let mut nanos: u64 = 0;
+    for (amount, unit) in duration_parts(date)? {
+        let seconds = match unit {
+            'W' => 604_800,
+            'D' => 86_400,
+            _ => return None,
+        };
+        nanos = nanos.checked_add(whole(amount)?.checked_mul(seconds * 1_000_000_000)?)?;
+    }
+    for (amount, unit) in duration_parts(time.unwrap_or(""))? {
+        let part = match (unit, amount.split_once('.')) {
+            ('S', Some((seconds, fraction))) => {
+                let kept = fraction.get(..fraction.len().min(9))?;
+                let scale = 10_u64.pow(9 - u32::try_from(kept.len()).ok()?);
+                let fraction = if kept.is_empty() {
+                    0
+                } else {
+                    whole(kept)? * scale
+                };
+                whole(seconds)?
+                    .checked_mul(1_000_000_000)?
+                    .checked_add(fraction)?
+            }
+            ('H', None) => whole(amount)?.checked_mul(3_600_000_000_000)?,
+            ('M', None) => whole(amount)?.checked_mul(60_000_000_000)?,
+            ('S', None) => whole(amount)?.checked_mul(1_000_000_000)?,
+            _ => return None,
+        };
+        nanos = nanos.checked_add(part)?;
+    }
+    Some(nanos)
+}
+
+/// A duration's parts, each its amount and its unit, in order.
+fn duration_parts(text: &str) -> Option<Vec<(&str, char)>> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    for (at, c) in text.char_indices() {
+        if c.is_ascii_digit() || c == '.' {
+            continue;
+        }
+        let amount = &text[start..at];
+        if amount.is_empty() {
+            return None;
+        }
+        parts.push((amount, c.to_ascii_uppercase()));
+        start = at + c.len_utf8();
+    }
+    (start == text.len()).then_some(parts)
+}
+
+fn whole(text: &str) -> Option<u64> {
+    (!text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())).then(|| text.parse().ok())?
+}
+
 /// Whole seconds from the epoch to `at`, zero for a moment before it.
 #[must_use]
 pub fn unix_seconds(at: SystemTime) -> i64 {
@@ -439,6 +509,18 @@ mod tests {
         assert_eq!(read_offset("-01:30"), Some(-5_400));
         for wrong in ["", "+2:00", "+24:00", "+02:60", "02:00", "+02:00Z"] {
             assert_eq!(read_offset(wrong), None, "{wrong}");
+        }
+    }
+
+    #[test]
+    fn a_duration_reads_as_nanoseconds_and_a_calendar_one_is_none() {
+        let second = 1_000_000_000;
+        assert_eq!(read_duration("PT5M"), Some(300 * second));
+        assert_eq!(read_duration("P1DT2H30M"), Some((86_400 + 9_000) * second));
+        assert_eq!(read_duration("P2W"), Some(1_209_600 * second));
+        assert_eq!(read_duration("PT0.25S"), Some(second / 4));
+        for wrong in ["", "P", "PT", "P1Y", "P1M", "PT1.5M", "5M", "PT-1S", "PTM"] {
+            assert_eq!(read_duration(wrong), None, "{wrong}");
         }
     }
 }
