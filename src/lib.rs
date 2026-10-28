@@ -11,7 +11,8 @@
 //!
 //! Characters: [`char_reader`] is the character reader every lexer walks
 //! its text with; [`toml`] quotes and reads TOML basic strings; [`xml`]
-//! escapes and unescapes XML character data; [`mime`] reads a header's
+//! escapes and unescapes XML character data; [`percent`] writes and reads
+//! RFC 3986's percent-encoding; [`mime`] reads a header's
 //! media type and parameters and writes and reads a multipart body.
 //!
 //! Bytes: [`cursor`] reads a binary message's fields in order and
@@ -38,6 +39,7 @@ pub mod cursor;
 pub mod field;
 pub mod hex;
 pub mod mime;
+pub mod percent;
 pub mod random;
 pub mod sha1;
 pub mod toml;
