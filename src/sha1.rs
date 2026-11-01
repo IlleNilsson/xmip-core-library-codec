@@ -46,11 +46,13 @@ pub fn digest(message: &[u8]) -> [u8; DIGEST_LENGTH] {
     out
 }
 
-/// `block` compressed into `state`: the eighty rounds.
+/// `block` compressed into `state`: the eighty rounds, as four runs of
+/// twenty, each with its own function and constant, so no round asks
+/// which it is (until 2026-11-01 every round did, and a Publication's
+/// digest over two kilobytes took some twenty microseconds; open problem
+/// 33).
 ///
-/// The working variables a to e and the round index keep the standard's
-/// single-letter names, so the lint is off for this one function rather
-/// than renaming what everyone reads letter for letter.
+/// The round index keeps the standard's single-letter name.
 #[allow(clippy::many_single_char_names)]
 fn compress(state: &mut [u32; 5], block: &[u8; 64]) {
     let mut w = [0u32; 80];
@@ -60,28 +62,34 @@ fn compress(state: &mut [u32; 5], block: &[u8; 64]) {
     for i in 16..80 {
         w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
     }
-    let [mut a, mut b, mut c, mut d, mut e] = *state;
-    for (i, word) in w.iter().enumerate() {
-        let (f, k) = match i {
-            0..=19 => ((b & c) | (!b & d), 0x5a82_7999),
-            20..=39 => (b ^ c ^ d, 0x6ed9_eba1),
-            40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1b_bcdc),
-            _ => (b ^ c ^ d, 0xca62_c1d6),
-        };
+    let mut working = *state;
+    rounds(&mut working, &w[..20], 0x5a82_7999, |b, c, d| {
+        (b & c) | (!b & d)
+    });
+    rounds(&mut working, &w[20..40], 0x6ed9_eba1, |b, c, d| b ^ c ^ d);
+    rounds(&mut working, &w[40..60], 0x8f1b_bcdc, |b, c, d| {
+        (b & c) | (b & d) | (c & d)
+    });
+    rounds(&mut working, &w[60..], 0xca62_c1d6, |b, c, d| b ^ c ^ d);
+    for (slot, value) in state.iter_mut().zip(working) {
+        *slot = slot.wrapping_add(value);
+    }
+}
+
+/// One run of rounds over `words` into the working variables a to e, under
+/// the constant `k` and the round function `f` of b, c and d.
+#[allow(clippy::many_single_char_names)]
+#[inline]
+fn rounds(working: &mut [u32; 5], words: &[u32], k: u32, f: impl Fn(u32, u32, u32) -> u32) {
+    for word in words {
+        let [a, b, c, d, e] = *working;
         let next = a
             .rotate_left(5)
-            .wrapping_add(f)
+            .wrapping_add(f(b, c, d))
             .wrapping_add(e)
             .wrapping_add(k)
             .wrapping_add(*word);
-        e = d;
-        d = c;
-        c = b.rotate_left(30);
-        b = a;
-        a = next;
-    }
-    for (slot, value) in state.iter_mut().zip([a, b, c, d, e]) {
-        *slot = slot.wrapping_add(value);
+        *working = [next, a, b.rotate_left(30), c, d];
     }
 }
 
