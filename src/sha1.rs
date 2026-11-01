@@ -10,11 +10,9 @@ pub const DIGEST_LENGTH: usize = 20;
 
 /// The SHA-1 digest of `message`.
 ///
-/// The working variables a to e and the round index keep the standard's
-/// single-letter names, so the lint is off for this one function rather
-/// than renaming what everyone reads letter for letter.
+/// Each whole block is read where the message is; only its last bytes and
+/// the padding are copied, into at most two blocks on the stack.
 #[must_use]
-#[allow(clippy::many_single_char_names)]
 pub fn digest(message: &[u8]) -> [u8; DIGEST_LENGTH] {
     let mut state: [u32; 5] = [
         0x6745_2301,
@@ -26,44 +24,19 @@ pub fn digest(message: &[u8]) -> [u8; DIGEST_LENGTH] {
     let bits = u64::try_from(message.len())
         .unwrap_or(u64::MAX)
         .wrapping_mul(8);
-    let mut padded = message.to_vec();
-    padded.push(0x80);
-    while padded.len() % 64 != 56 {
-        padded.push(0);
+    let (blocks, rest) = message.as_chunks::<64>();
+    for block in blocks {
+        compress(&mut state, block);
     }
-    padded.extend_from_slice(&bits.to_be_bytes());
-
-    for block in padded.as_chunks::<64>().0 {
-        let mut w = [0u32; 80];
-        for (word, bytes) in w.iter_mut().zip(block.as_chunks::<4>().0) {
-            *word = u32::from_be_bytes(*bytes);
-        }
-        for i in 16..80 {
-            w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
-        }
-        let [mut a, mut b, mut c, mut d, mut e] = state;
-        for (i, word) in w.iter().enumerate() {
-            let (f, k) = match i {
-                0..=19 => ((b & c) | (!b & d), 0x5a82_7999),
-                20..=39 => (b ^ c ^ d, 0x6ed9_eba1),
-                40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1b_bcdc),
-                _ => (b ^ c ^ d, 0xca62_c1d6),
-            };
-            let next = a
-                .rotate_left(5)
-                .wrapping_add(f)
-                .wrapping_add(e)
-                .wrapping_add(k)
-                .wrapping_add(*word);
-            e = d;
-            d = c;
-            c = b.rotate_left(30);
-            b = a;
-            a = next;
-        }
-        for (slot, value) in state.iter_mut().zip([a, b, c, d, e]) {
-            *slot = slot.wrapping_add(value);
-        }
+    // The last bytes, the one bit after them, and the length in the last
+    // eight bytes: one block, or two where the length does not fit after.
+    let mut tail = [0u8; 128];
+    tail[..rest.len()].copy_from_slice(rest);
+    tail[rest.len()] = 0x80;
+    let end = if rest.len() < 56 { 64 } else { 128 };
+    tail[end - 8..end].copy_from_slice(&bits.to_be_bytes());
+    for block in tail[..end].as_chunks::<64>().0 {
+        compress(&mut state, block);
     }
 
     let mut out = [0u8; DIGEST_LENGTH];
@@ -71,6 +44,45 @@ pub fn digest(message: &[u8]) -> [u8; DIGEST_LENGTH] {
         *bytes = word.to_be_bytes();
     }
     out
+}
+
+/// `block` compressed into `state`: the eighty rounds.
+///
+/// The working variables a to e and the round index keep the standard's
+/// single-letter names, so the lint is off for this one function rather
+/// than renaming what everyone reads letter for letter.
+#[allow(clippy::many_single_char_names)]
+fn compress(state: &mut [u32; 5], block: &[u8; 64]) {
+    let mut w = [0u32; 80];
+    for (word, bytes) in w.iter_mut().zip(block.as_chunks::<4>().0) {
+        *word = u32::from_be_bytes(*bytes);
+    }
+    for i in 16..80 {
+        w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
+    }
+    let [mut a, mut b, mut c, mut d, mut e] = *state;
+    for (i, word) in w.iter().enumerate() {
+        let (f, k) = match i {
+            0..=19 => ((b & c) | (!b & d), 0x5a82_7999),
+            20..=39 => (b ^ c ^ d, 0x6ed9_eba1),
+            40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1b_bcdc),
+            _ => (b ^ c ^ d, 0xca62_c1d6),
+        };
+        let next = a
+            .rotate_left(5)
+            .wrapping_add(f)
+            .wrapping_add(e)
+            .wrapping_add(k)
+            .wrapping_add(*word);
+        e = d;
+        d = c;
+        c = b.rotate_left(30);
+        b = a;
+        a = next;
+    }
+    for (slot, value) in state.iter_mut().zip([a, b, c, d, e]) {
+        *slot = slot.wrapping_add(value);
+    }
 }
 
 #[cfg(test)]
