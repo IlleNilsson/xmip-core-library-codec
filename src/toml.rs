@@ -17,25 +17,43 @@ use std::fmt::Write;
 #[must_use]
 pub fn quote(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
-    out.push('"');
-    for character in text.chars() {
-        match character {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\u{8}' => out.push_str("\\b"),
-            '\t' => out.push_str("\\t"),
-            '\n' => out.push_str("\\n"),
-            '\u{c}' => out.push_str("\\f"),
-            '\r' => out.push_str("\\r"),
-            '\u{0}'..='\u{1f}' | '\u{7f}' => {
-                // Writing to a String cannot fail.
-                let _ = write!(out, "\\u{:04X}", u32::from(character));
-            }
-            other => out.push(other),
-        }
-    }
-    out.push('"');
+    quote_into(&mut out, text);
     out
+}
+
+/// `value`'s text as a TOML basic string, quotes included, written at the
+/// end of `out`: what [`quote`] returns, for a writer of a whole document
+/// that makes no string of each value first.
+pub fn quote_into(out: &mut String, value: impl std::fmt::Display) {
+    out.push('"');
+    // Writing to a String cannot fail.
+    let _ = write!(Escaping(out), "{value}");
+    out.push('"');
+}
+
+/// What is written through it, escaped as a basic string's content.
+struct Escaping<'a>(&'a mut String);
+
+impl Write for Escaping<'_> {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        let out = &mut *self.0;
+        for character in text.chars() {
+            match character {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\u{8}' => out.push_str("\\b"),
+                '\t' => out.push_str("\\t"),
+                '\n' => out.push_str("\\n"),
+                '\u{c}' => out.push_str("\\f"),
+                '\r' => out.push_str("\\r"),
+                '\u{0}'..='\u{1f}' | '\u{7f}' => {
+                    write!(out, "\\u{:04X}", u32::from(character))?;
+                }
+                other => out.push(other),
+            }
+        }
+        Ok(())
+    }
 }
 
 /// The text of `literal`, which is one basic string and nothing else.
