@@ -21,7 +21,8 @@
 //! written and read over them; [`varint`] is the base-128 varint and its
 //! zig-zag; [`hex`] and [`base64`] spell bytes as text; [`unicode`] is
 //! text in the encoding form a setting declares, strictly both ways;
-//! [`utf16`] is text as the Windows protocols write it; [`crc`] is the one
+//! [`utf16`] is text as the Windows protocols write it; [`wide`] is text
+//! as the Windows API takes it, ended by a NUL; [`crc`] is the one
 //! parameterised CRC with each protocol's as a named constant; [`sha1`] is
 //! the digest two protocols still name; [`constant_time`] compares a
 //! secret without saying where it differs.
@@ -49,6 +50,7 @@ pub mod toml;
 pub mod unicode;
 pub mod utf16;
 pub mod varint;
+pub mod wide;
 pub mod writer;
 pub mod xml;
 
