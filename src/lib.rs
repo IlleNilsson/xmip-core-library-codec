@@ -16,7 +16,9 @@
 //! media type and parameters and writes and reads a multipart body.
 //!
 //! Bytes: [`cursor`] reads a binary message's fields in order and
-//! [`writer`] writes them; [`varint`] is the base-128 varint and its
+//! [`writer`] writes them; [`field`] is a compact record's counted bytes
+//! and text, absent values and runs; [`form`] is a value's one binary form,
+//! written and read over them; [`varint`] is the base-128 varint and its
 //! zig-zag; [`hex`] and [`base64`] spell bytes as text; [`unicode`] is
 //! text in the encoding form a setting declares, strictly both ways;
 //! [`utf16`] is text as the Windows protocols write it; [`crc`] is the one
@@ -37,6 +39,7 @@ pub mod constant_time;
 pub mod crc;
 pub mod cursor;
 pub mod field;
+pub mod form;
 pub mod hex;
 pub mod mime;
 pub mod percent;
