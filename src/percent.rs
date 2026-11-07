@@ -70,7 +70,7 @@ pub fn encode_keeping(text: &str, plain: impl Fn(u8) -> bool) -> String {
 #[must_use]
 pub fn decode(text: &str) -> String {
     let decoded = walk(text.as_bytes(), false).unwrap_or_else(|_| text.as_bytes().to_vec());
-    String::from_utf8_lossy(&decoded).into_owned()
+    String::from_utf8_lossy_owned(decoded)
 }
 
 /// `%XX` back to bytes, refusing a `%` that two hex digits do not follow.
