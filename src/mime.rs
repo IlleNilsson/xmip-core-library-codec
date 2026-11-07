@@ -48,12 +48,7 @@ pub fn parameter<'a>(value: &'a str, name: &str) -> Option<&'a str> {
             return None;
         }
         let value = value.trim();
-        Some(
-            value
-                .strip_prefix('"')
-                .and_then(|v| v.strip_suffix('"'))
-                .unwrap_or(value),
-        )
+        Some(value.strip_circumfix('"', '"').unwrap_or(value))
     })
 }
 
@@ -99,12 +94,8 @@ impl Part {
     /// The part's `Content-ID`, its angle brackets off.
     #[must_use]
     pub fn content_id(&self) -> Option<&str> {
-        self.header_value("Content-ID").map(|value| {
-            value
-                .strip_prefix('<')
-                .and_then(|v| v.strip_suffix('>'))
-                .unwrap_or(value)
-        })
+        self.header_value("Content-ID")
+            .map(|value| value.strip_circumfix('<', '>').unwrap_or(value))
     }
 }
 

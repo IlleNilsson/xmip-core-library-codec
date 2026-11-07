@@ -32,7 +32,7 @@ pub fn encode_be(text: &str) -> Vec<u8> {
 /// # Errors
 /// An odd number of bytes, or a surrogate without its pair.
 pub fn decode(bytes: &[u8]) -> Result<String> {
-    strictly(bytes, u16::from_le_bytes)
+    strictly(bytes, String::from_utf16le, u16::from_le_bytes)
 }
 
 /// The text big-endian `bytes` spell, strictly.
@@ -40,10 +40,17 @@ pub fn decode(bytes: &[u8]) -> Result<String> {
 /// # Errors
 /// An odd number of bytes, or a surrogate without its pair.
 pub fn decode_be(bytes: &[u8]) -> Result<String> {
-    strictly(bytes, u16::from_be_bytes)
+    strictly(bytes, String::from_utf16be, u16::from_be_bytes)
 }
 
-fn strictly(bytes: &[u8], unit: fn([u8; 2]) -> u16) -> Result<String> {
+/// `bytes` read by the standard library's `read`; on a refusal, the
+/// surrogate without its pair found again by `unit`, since the standard
+/// library's error does not say which it was.
+fn strictly(
+    bytes: &[u8],
+    read: fn(&[u8]) -> core::result::Result<String, std::string::FromUtf16Error>,
+    unit: fn([u8; 2]) -> u16,
+) -> Result<String> {
     let (units, rest) = bytes.as_chunks::<2>();
     if !rest.is_empty() {
         return Err(CodecError::new(format!(
@@ -51,24 +58,22 @@ fn strictly(bytes: &[u8], unit: fn([u8; 2]) -> u16) -> Result<String> {
             bytes.len()
         )));
     }
-    char::decode_utf16(units.iter().map(|pair| unit(*pair)))
-        .collect::<core::result::Result<String, _>>()
-        .map_err(|error| {
-            CodecError::new(format!(
-                "not UTF-16: the surrogate {:#06x} has no pair",
-                error.unpaired_surrogate()
-            ))
-        })
+    read(bytes).map_err(|_| {
+        let unpaired = char::decode_utf16(units.iter().map(|pair| unit(*pair)))
+            .find_map(core::result::Result::err)
+            .map_or(0, |error| error.unpaired_surrogate());
+        CodecError::new(format!(
+            "not UTF-16: the surrogate {unpaired:#06x} has no pair"
+        ))
+    })
 }
 
 /// The text little-endian `bytes` spell, each unpaired surrogate as U+FFFD
 /// and an odd trailing byte dropped.
 #[must_use]
 pub fn decode_lossy(bytes: &[u8]) -> String {
-    let units = bytes.as_chunks::<2>().0;
-    char::decode_utf16(units.iter().map(|pair| u16::from_le_bytes(*pair)))
-        .map(|unit| unit.unwrap_or(char::REPLACEMENT_CHARACTER))
-        .collect()
+    let even = bytes.len() & !1;
+    String::from_utf16le_lossy(&bytes[..even])
 }
 
 #[cfg(test)]
