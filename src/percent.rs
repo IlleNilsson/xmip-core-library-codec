@@ -7,8 +7,11 @@
 //! segments of a path. Read in two ways, over one walk: [`decode`] leaves a
 //! `%` that two hex digits do not follow as it is, as the WHATWG URL
 //! parser does, for a far end that takes what it is sent; [`decode_strict`]
-//! refuses it, for a credential or a form Xmip must not guess at. What a `+`
-//! means is the form's, not the URI's, and stays with the form.
+//! refuses it, for a credential or a form Xmip must not guess at. A `+` is
+//! a `+` in a URI and a space in `application/x-www-form-urlencoded`
+//! (WHATWG URL, section 5.1): [`decode_pairs`] reads a URI's query,
+//! [`decode_form_pairs`] and [`decode_form_strict`] a form body, on the same
+//! walk, so the one form decoder is here.
 //!
 //! An encoding primitive, so it is here, below everything that writes or
 //! reads one, and a contract that percent-decodes a `$ref` compiles no
@@ -69,8 +72,7 @@ pub fn encode_keeping(text: &str, plain: impl Fn(u8) -> bool) -> String {
 /// hex digits do not follow is left as it is.
 #[must_use]
 pub fn decode(text: &str) -> String {
-    let decoded = walk(text.as_bytes(), false).unwrap_or_else(|_| text.as_bytes().to_vec());
-    String::from_utf8_lossy_owned(decoded)
+    lenient(text, Plus::Kept)
 }
 
 /// `%XX` back to bytes, refusing a `%` that two hex digits do not follow.
@@ -79,19 +81,53 @@ pub fn decode(text: &str) -> String {
 ///
 /// At the first such `%`, saying where it is.
 pub fn decode_strict(text: &[u8]) -> Result<Vec<u8>, BrokenEscape> {
-    walk(text, true)
+    walk(text, true, Plus::Kept)
 }
 
-/// `name=value` pairs joined by `&` — a URI's query, or a form body —
-/// each name and value [`decode`]d; a pair without `=` has an empty
-/// value, and an empty pair is skipped.
+/// A form's name or value back to bytes: `+` as a space, `%XX` as its
+/// byte, a `%` that two hex digits do not follow refused. An escaped `%2B`
+/// is a `+`, never a space.
+///
+/// # Errors
+///
+/// At the first broken `%`, saying where it is.
+pub fn decode_form_strict(text: &[u8]) -> Result<Vec<u8>, BrokenEscape> {
+    walk(text, true, Plus::Space)
+}
+
+/// `name=value` pairs joined by `&` in a URI's query, each name and value
+/// [`decode`]d, a `+` kept; a pair without `=` has an empty value, and an
+/// empty pair is skipped.
 #[must_use]
 pub fn decode_pairs(text: &str) -> Vec<(String, String)> {
+    split_pairs(text, Plus::Kept)
+}
+
+/// `name=value` pairs joined by `&` in a form body, as [`decode_pairs`]
+/// but with a `+` read as a space.
+#[must_use]
+pub fn decode_form_pairs(text: &str) -> Vec<(String, String)> {
+    split_pairs(text, Plus::Space)
+}
+
+/// What a `+` is: itself in a URI, a space in a form.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Plus {
+    Kept,
+    Space,
+}
+
+fn lenient(text: &str, plus: Plus) -> String {
+    let decoded = walk(text.as_bytes(), false, plus).unwrap_or_else(|_| text.as_bytes().to_vec());
+    String::from_utf8_lossy_owned(decoded)
+}
+
+fn split_pairs(text: &str, plus: Plus) -> Vec<(String, String)> {
     text.split('&')
         .filter(|pair| !pair.is_empty())
         .map(|pair| {
             let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
-            (decode(name), decode(value))
+            (lenient(name, plus), lenient(value, plus))
         })
         .collect()
 }
@@ -113,8 +149,9 @@ pub fn encode_pairs<N: AsRef<str>, V: AsRef<str>>(pairs: &[(N, V)]) -> String {
 }
 
 /// The one walk: each escape decoded, and a broken one refused where
-/// `strict` says so and kept as written where it does not.
-fn walk(text: &[u8], strict: bool) -> Result<Vec<u8>, BrokenEscape> {
+/// `strict` says so and kept as written where it does not; a `+` as `plus`
+/// reads it.
+fn walk(text: &[u8], strict: bool, plus: Plus) -> Result<Vec<u8>, BrokenEscape> {
     let mut out = Vec::with_capacity(text.len());
     let mut at = 0;
     while at < text.len() {
@@ -129,6 +166,10 @@ fn walk(text: &[u8], strict: bool) -> Result<Vec<u8>, BrokenEscape> {
                 at += 3;
             }
             None if strict && text[at] == b'%' => return Err(BrokenEscape { at }),
+            None if plus == Plus::Space && text[at] == b'+' => {
+                out.push(b' ');
+                at += 1;
+            }
             None => {
                 out.push(text[at]);
                 at += 1;
@@ -182,6 +223,20 @@ mod tests {
         assert_eq!(written, "Action=Send%20Message&to=a%26b%3Dc");
         assert_eq!(decode_pairs(&written)[1], ("to".into(), "a&b=c".into()));
         assert_eq!(decode_pairs(""), [] as [(String, String); 0]);
+    }
+
+    #[test]
+    fn a_form_reads_a_plus_as_a_space_and_an_escaped_plus_as_a_plus() {
+        assert_eq!(
+            decode_form_pairs("Message=a+b%2Bc&k+1=%zz+"),
+            [
+                ("Message".to_string(), "a b+c".to_string()),
+                ("k 1".to_string(), "%zz ".to_string()),
+            ],
+            "lenient: a broken escape is kept as written"
+        );
+        assert_eq!(decode_form_strict(b"a+b%2B").expect("read"), b"a b+");
+        assert_eq!(decode_form_strict(b"a+%2"), Err(BrokenEscape { at: 2 }));
     }
 
     #[test]

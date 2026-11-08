@@ -27,6 +27,9 @@
 //! the digest two protocols still name; [`constant_time`] compares a
 //! secret without saying where it differs.
 //!
+//! Structure: [`depth`] is the one cap on how deep a recursive reader goes
+//! before the bytes it is given are refused as hostile.
+//!
 //! Randomness: [`random`] fills bytes from the operating system's random
 //! source, the one place a key, salt, nonce, challenge or id is drawn.
 //!
@@ -34,11 +37,13 @@
 //! of day and back, and reads RFC 3339 dates, times and offsets.
 
 pub mod base64;
+pub mod ceiling;
 pub mod char_reader;
 pub mod civil;
 pub mod constant_time;
 pub mod crc;
 pub mod cursor;
+pub mod depth;
 pub mod field;
 pub mod form;
 pub mod hex;

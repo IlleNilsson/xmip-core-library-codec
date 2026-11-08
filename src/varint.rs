@@ -2,7 +2,8 @@
 //! a signed integer into it.
 //!
 //! Seven bits a byte, low bits first, the high bit saying another byte
-//! follows; ten bytes carry sixty-four bits and an eleventh is refused.
+//! follows; ten bytes carry sixty-four bits, so an eleventh is refused and
+//! so is a tenth above 1, whose bits would fall past the sixty-fourth.
 //! Protocol Buffers writes every integer and length this way, Avro every
 //! `long` zig-zagged over it, and a Kafka record batch its record fields.
 //! Until 2026-09-24 the message layer, the contract capability and Kafka
@@ -15,7 +16,8 @@ use crate::CodecError;
 pub enum VarintError {
     /// The bytes end while the high bit still says another follows.
     Unterminated,
-    /// Ten bytes and the high bit still set.
+    /// Ten bytes and the high bit still set, or a tenth byte above 1, whose
+    /// bits would fall past the sixty-fourth.
     Overlong,
 }
 
@@ -50,11 +52,12 @@ pub const MAX_LENGTH: usize = 10;
 /// The varint `bytes` open with: its value and how many bytes it took.
 ///
 /// # Errors
-/// The bytes end inside the varint, or it runs past ten bytes.
+/// The bytes end inside the varint, or it runs past ten bytes, or its tenth
+/// byte carries more than the one bit sixty-four leaves it.
 pub fn decode(bytes: &[u8]) -> Result<(u64, usize), VarintError> {
     let mut value: u64 = 0;
     for (index, byte) in bytes.iter().enumerate() {
-        if index >= MAX_LENGTH {
+        if index >= MAX_LENGTH || (index == MAX_LENGTH - 1 && *byte > 1) {
             return Err(VarintError::Overlong);
         }
         value |= u64::from(byte & 0x7f) << (7 * index);
@@ -120,6 +123,11 @@ mod tests {
         assert_eq!(decode(&[]), Err(VarintError::Unterminated));
         assert_eq!(decode(&[0x80]), Err(VarintError::Unterminated));
         assert_eq!(decode(&[0x80; 11]), Err(VarintError::Overlong));
+        let mut tenth = [0xff; 10];
+        for last in [0x02, 0x7f, 0x81] {
+            tenth[9] = last;
+            assert_eq!(decode(&tenth), Err(VarintError::Overlong), "{last:#x}");
+        }
         assert_eq!(
             CodecError::from(VarintError::Overlong).message,
             "a varint runs past ten bytes"
