@@ -63,4 +63,4 @@ a server challenge as guessable as the time. SFTP and the key home drew from
 the operating system already, each through a crate of its own. All of them
 draw through `random` now.
 
-`architecture.xmip` carries the maturity.
+`architecture.toml` carries the maturity.
