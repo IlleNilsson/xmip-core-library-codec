@@ -11,6 +11,9 @@
 //! `dateTime` — stays with the protocol; RFC 3339, which four of them
 //! write, is here, and so are its date, time and offset read one by one:
 //! the JSON Schema and XML Schema contracts check those formats with them.
+//! The moment is always a parameter: this reads no clock. The one clock is
+//! `xcore::Clock`, read where a moment is taken (ADR-0068, amendment
+//! 2026-11-14).
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -62,9 +65,9 @@ impl CivilTime {
         })
     }
 
-    /// The moment `seconds` after the epoch.
+    /// The moment `seconds` after the epoch, before it where negative.
     #[must_use]
-    fn from_unix(seconds: i64) -> Self {
+    pub fn from_unix(seconds: i64) -> Self {
         let (year, month, day) = civil_from_days(seconds.div_euclid(SECONDS_A_DAY));
         let of_day = seconds.rem_euclid(SECONDS_A_DAY);
         let part = |value: i64| u32::try_from(value).unwrap_or(0);
@@ -78,17 +81,19 @@ impl CivilTime {
         }
     }
 
+    /// The moment `unix_nanos` after the epoch, to the whole second: a part
+    /// of a second is cut.
+    #[must_use]
+    pub fn from_unix_nanos(unix_nanos: i128) -> Self {
+        let seconds = unix_nanos.div_euclid(NANOS_A_SECOND);
+        Self::from_unix(i64::try_from(seconds).unwrap_or(0))
+    }
+
     /// The moment `at`, to the whole second. A moment before the epoch,
     /// which no clock this runs under reports, is the epoch itself.
     #[must_use]
     pub fn from_system_time(at: SystemTime) -> Self {
         Self::from_unix(unix_seconds(at))
-    }
-
-    /// Now, to the whole second.
-    #[must_use]
-    pub fn now() -> Self {
-        Self::from_system_time(SystemTime::now())
     }
 
     /// Seconds since the epoch; a leap second is the second after it.
@@ -117,16 +122,15 @@ impl CivilTime {
 }
 
 /// Nanoseconds in a second.
-const NANOS_A_SECOND: i128 = 1_000_000_000;
+pub const NANOS_A_SECOND: i128 = 1_000_000_000;
 
 /// RFC 3339 in UTC to the nanosecond, `unix_nanos` after the epoch:
 /// `2026-09-10T12:00:00.000000042Z`. What an audit record and an
 /// Event's `time` are stamped with.
 #[must_use]
 pub fn rfc3339_nanos(unix_nanos: i128) -> String {
-    let seconds = i64::try_from(unix_nanos.div_euclid(NANOS_A_SECOND)).unwrap_or(0);
     let nanos = unix_nanos.rem_euclid(NANOS_A_SECOND);
-    let whole = CivilTime::from_unix(seconds).rfc3339();
+    let whole = CivilTime::from_unix_nanos(unix_nanos).rfc3339();
 
     format!("{}.{nanos:09}Z", whole.trim_end_matches('Z'))
 }
@@ -439,7 +443,10 @@ mod tests {
             .checked_sub(Duration::from_secs(5))
             .expect("earlier");
         assert_eq!(CivilTime::from_system_time(before), at(1970, 1, 1, 0, 0, 0));
-        assert!(CivilTime::now().year >= 2026);
+        assert_eq!(CivilTime::from_unix(-5), at(1969, 12, 31, 23, 59, 55));
+        let then = CivilTime::from_unix_nanos(1_800_000_000_999_999_999);
+        assert_eq!(then, at(2027, 1, 15, 8, 0, 0), "a part of a second cut");
+        assert_eq!(CivilTime::from_unix_nanos(-1), at(1969, 12, 31, 23, 59, 59));
     }
 
     #[test]

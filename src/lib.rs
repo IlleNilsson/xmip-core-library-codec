@@ -38,7 +38,8 @@
 //! source, the one place a key, salt, nonce, challenge or id is drawn.
 //!
 //! Time: [`civil`] turns seconds since the epoch into a UTC date and time
-//! of day and back, and reads RFC 3339 dates, times and offsets.
+//! of day and back, and reads RFC 3339 dates, times and offsets;
+//! [`filetime`] is Windows' count of ticks since 1601, to and from it.
 
 pub mod base64;
 pub mod ceiling;
@@ -51,6 +52,7 @@ pub mod cursor;
 pub mod depth;
 pub mod digest;
 pub mod field;
+pub mod filetime;
 pub mod form;
 pub mod hex;
 pub mod mime;
