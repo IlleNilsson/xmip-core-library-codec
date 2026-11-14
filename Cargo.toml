@@ -16,6 +16,20 @@ path = "src/lib.rs"
 # The operating system's random source and nothing else: no generator in
 # this process, no clock. `random` is its one caller in the estate.
 getrandom = "0.4"
+# XML cut into pieces: the one XML backend the estate links, read through
+# `xml` and named by no crate above it (test/ThirdParty.Test.ps1). No
+# default features: UTF-8 only, no serde, no encoding tables.
+quick-xml = { version = "0.42", default-features = false }
+# A document in another encoding — its byte order mark, or the encoding its
+# XML declaration names, ISO-8859-1, Windows-1252, UTF-16 — decoded at the
+# reader's edge (`xml::decoded`), strictly: bytes wrong for the encoding are
+# refused, never replaced. The WHATWG encodings, pure Rust.
+encoding_rs = "0.8"
+# SHA-256 and its HMAC (`digest`), pure Rust, sha2 on the processor's SHA
+# extensions where it has them: the one backend every SHA-256 and HMAC in
+# the estate is computed by.
+sha2 = "0.11"
+hmac = "0.13"
 
 [lints.rust]
 # forbid, not deny: a module has no business writing unsafe. The one exception
