@@ -11,6 +11,14 @@
 //! [`CodecError`], and a crate turns it into its own error once, where the
 //! bytes came in.
 //!
+//! A record kept or handed on opens with the number of its form, so a
+//! reader of a later form can still tell what an earlier one wrote:
+//! [`numbered`] writes it before a value, [`opened`] reads and checks it,
+//! refusing another number in words, and [`from_numbered`] reads the value
+//! after it. Until 2026-11-13 the Journey's, the Message's, the identity
+//! facts', a Subscription's standing and a Work Process's forms each wrote
+//! and checked it themselves.
+//!
 //! [`ByteWriter`]: crate::writer::ByteWriter
 
 use crate::cursor::Cursor;
@@ -81,6 +89,40 @@ impl<T: Form> Form for Vec<T> {
     }
 }
 
+/// `value` after `number`, the number of its form, written after what `out`
+/// holds.
+pub fn numbered<T: Form>(out: &mut Vec<u8>, number: u8, value: &T) {
+    out.byte(number);
+    value.write(out);
+}
+
+/// Read the number a form opens with from where `cursor` is, and go on
+/// only where it is `number`.
+///
+/// # Errors
+/// Nothing is there, or another number is, said as `what` of that form.
+pub fn opened(cursor: &mut Cursor<'_>, number: u8, what: &str) -> Result<()> {
+    let found = cursor.byte()?;
+    if found == number {
+        Ok(())
+    } else {
+        Err(CodecError::new(format!(
+            "{what} of form {found}, and this reads form {number}"
+        )))
+    }
+}
+
+/// The value `bytes` hold after `number`, the number of its form, and
+/// nothing after it.
+///
+/// # Errors
+/// As [`opened`], then as [`Form::from_bytes`].
+pub fn from_numbered<T: Form>(bytes: &[u8], number: u8, what: &str) -> Result<T> {
+    let mut cursor = Cursor::new(bytes);
+    opened(&mut cursor, number, what)?;
+    T::from_bytes(cursor.remaining())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,5 +188,23 @@ mod tests {
         let refused = Named::from_bytes(&zero.bytes()).expect_err("not one");
         assert_eq!(refused.message, "no value is numbered 0");
         assert!(Vec::<Named>::from_bytes(&[0, 0, 0, 1]).is_err());
+    }
+
+    #[test]
+    fn a_numbered_value_opens_with_its_form_and_another_form_is_refused_in_words() {
+        let value = named(7);
+        let mut record = Vec::new();
+        numbered(&mut record, 3, &value);
+        assert_eq!(record[0], 3);
+        assert_eq!(&record[1..], value.bytes().as_slice());
+        assert_eq!(from_numbered::<Named>(&record, 3, "a name"), Ok(value));
+        let refused = from_numbered::<Named>(&record, 4, "a name").expect_err("form 3");
+        assert_eq!(refused.message, "a name of form 3, and this reads form 4");
+        assert!(from_numbered::<Named>(&[], 3, "a name").is_err());
+        let longer = [record.as_slice(), &[0]].concat();
+        assert!(from_numbered::<Named>(&longer, 3, "a name").is_err());
+        let mut cursor = Cursor::new(&record);
+        opened(&mut cursor, 3, "a name").expect("form 3");
+        assert_eq!(Named::read(&mut cursor), Ok(named(7)));
     }
 }

@@ -10,8 +10,9 @@
 //! panicked inside U+00A0, and two TOML writers quoted a string two ways.
 //!
 //! Characters: [`char_reader`] is the character reader every lexer walks
-//! its text with; [`toml`] quotes and reads TOML basic strings; [`xml`]
-//! escapes and unescapes XML character data; [`percent`] writes and reads
+//! its text with; [`toml`] quotes and reads TOML basic strings; [`xml`] is
+//! the estate's one XML reader — in memory, streamed, as a tree and as a
+//! protocol's flat scan — and escapes its character data; [`percent`] writes and reads
 //! RFC 3986's percent-encoding; [`mime`] reads a header's
 //! media type and parameters and writes and reads a multipart body.
 //!
@@ -20,11 +21,14 @@
 //! and text, absent values and runs; [`form`] is a value's one binary form,
 //! written and read over them; [`varint`] is the base-128 varint and its
 //! zig-zag; [`hex`] and [`base64`] spell bytes as text; [`unicode`] is
-//! text in the encoding form a setting declares, strictly both ways;
+//! text in the encoding form a setting declares, strictly both ways, and
+//! [`charset`] text in the WHATWG standard's encodings, whole or in pieces;
 //! [`utf16`] is text as the Windows protocols write it; [`wide`] is text
 //! as the Windows API takes it, ended by a NUL; [`crc`] is the one
-//! parameterised CRC with each protocol's as a named constant; [`sha1`] is
-//! the digest two protocols still name; [`constant_time`] compares a
+//! parameterised CRC with each protocol's as a named constant; [`digest`]
+//! is SHA-256, its HMAC and PBKDF2, the estate's one; [`sha1`] is the
+//! digest a few protocols still name; [`pem`] is RFC 7468's armor, read
+//! and written; [`constant_time`] compares a
 //! secret without saying where it differs.
 //!
 //! Structure: [`depth`] is the one cap on how deep a recursive reader goes
@@ -39,15 +43,18 @@
 pub mod base64;
 pub mod ceiling;
 pub mod char_reader;
+pub mod charset;
 pub mod civil;
 pub mod constant_time;
 pub mod crc;
 pub mod cursor;
 pub mod depth;
+pub mod digest;
 pub mod field;
 pub mod form;
 pub mod hex;
 pub mod mime;
+pub mod pem;
 pub mod percent;
 pub mod random;
 pub mod sha1;

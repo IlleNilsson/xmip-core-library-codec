@@ -1,26 +1,44 @@
-//! XML 1.0 character data: escaping what a writer puts between tags and in
-//! attribute values, and unescaping what a reader takes out; and the scan a
-//! protocol's flat XML is read with.
+//! XML: the estate's one reader, and its character data written and read.
 //!
-//! Unescaping is strict. The five predefined entities and decimal and
-//! hexadecimal character references are read; anything else is refused
-//! rather than passed through, because text read one way by one reader and
-//! another way by the next is how two gates came to disagree about one
-//! name. Canonicalization (C14N) escapes by rules of its own and is not
-//! this.
+//! **One reader.** Every XML the estate reads goes through here (the
+//! owner, 2026-11-13: *Do we have all code in the modules, repos that we
+//! should*; until that day five readers did it five ways). The pieces are
+//! cut by `quick-xml`, the one XML backend linked, and given back in the
+//! estate's terms ([`event`]); [`decoded`] reads bytes in the encoding they
+//! declare; [`reader`] reads text in memory a piece at a time, or a start
+//! tag at a time, and holds a document to its order, [`streamed`] does the same over
+//! bytes as they arrive, [`tree`] reads a document into a tree with its
+//! namespaces resolved and where each node lies, and the flat scan
+//! ([`elements`], [`content`], [`text`], [`texts`], [`attribute`]) answers
+//! a protocol's one question of its flat document: an element by its local
+//! name, whatever its prefix. A Shape walking a Stream, a contract holding
+//! a document to a schema, a SAML gate, a BPMN design, a transport reading
+//! an answer and a conversion streaming a Stream all read here.
 //!
-//! The scan is not a parser. The documents a protocol meets are flat — an
-//! S3 listing naming keys, a `WebDAV` multistatus, an ebMS header, an SRMP
-//! envelope — and the one question asked of them is an element's content,
-//! text or attribute by its local name, whatever prefix the peer chose
-//! (`eb:`, `ns2:`, `D:`, none). A same-named element nested inside another
-//! is stepped over; markup inside a CDATA section or a comment is not
-//! understood. A document that needs a tree names a contract technology.
-//! Until 2026-09-28 the transport capability scanned by exact name, AS4
-//! and `WebDAV` each by local name with a scanner of their own, and MSMQ
-//! read an attribute by splitting the text.
+//! **Character data.** Escaping what a writer puts between tags and in
+//! attribute values, and reading back what a reader takes out. Reading is
+//! strict: the five predefined entities and decimal and hexadecimal
+//! character references are read; anything else is refused rather than
+//! passed through, because text read one way by one reader and another way
+//! by the next is how two gates came to disagree about one name.
+//! Canonicalization (C14N) escapes by rules of its own and is not this.
+
+mod decoded;
+pub mod event;
+mod malformed;
+pub mod reader;
+mod scan;
+pub mod streamed;
+pub mod tree;
+
+use std::borrow::Cow;
 
 use crate::{CodecError, Result};
+
+pub use decoded::decoded;
+pub use event::{Event, Malformed, Piece, Span, Tag};
+pub use reader::Reader;
+pub use scan::{Element, Elements, attribute, content, elements, text, texts};
 
 /// `text` as element content: `&`, `<` and `>` escaped, and `"` too, so
 /// the same text is safe inside a quoted attribute.
@@ -67,7 +85,12 @@ pub fn unescape(text: &str) -> Result<String> {
 
 /// What one entity or character reference, without its `&` and `;`,
 /// stands for.
-fn entity(name: &str) -> Result<char> {
+///
+/// # Errors
+///
+/// An entity XML does not predefine, or a character reference that names
+/// no character.
+pub fn entity(name: &str) -> Result<char> {
     let reference = |digits: &str, radix: u32| {
         u32::from_str_radix(digits, radix)
             .ok()
@@ -98,215 +121,75 @@ fn entity(name: &str) -> Result<char> {
     }
 }
 
-/// One element the scan found: its open tag and what lies between it and
-/// its close, still escaped.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Element<'a> {
-    open: &'a str,
-    content: &'a str,
-    closed_itself: bool,
-}
-
-impl<'a> Element<'a> {
-    /// What lies between the open and the close tag, markup and entities
-    /// as written; empty for an element that closed itself (`<x/>`).
-    #[must_use]
-    pub const fn content(&self) -> &'a str {
-        self.content
-    }
-
-    /// Whether the element closed itself (`<x/>`), so it has no content at
-    /// all rather than empty content.
-    #[must_use]
-    pub const fn closed_itself(&self) -> bool {
-        self.closed_itself
-    }
-
-    /// The content as text, entities unescaped.
-    ///
-    /// # Errors
-    ///
-    /// The content holds an entity XML does not define.
-    pub fn text(&self) -> Result<String> {
-        unescape(self.content)
-    }
-
-    /// The value of the attribute whose name, or local name, is `name`,
-    /// unescaped.
-    ///
-    /// # Errors
-    ///
-    /// The value holds an entity XML does not define.
-    pub fn attribute(&self, name: &str) -> Result<Option<String>> {
-        let mut rest = self
-            .open
-            .trim_start_matches(|c: char| !c.is_ascii_whitespace());
-        loop {
-            rest = rest.trim_start();
-            let Some(equals) = rest.find('=') else {
-                return Ok(None);
-            };
-            let key = rest[..equals].trim();
-            let after = rest[equals + 1..].trim_start();
-            let Some(quote) = after.chars().next().filter(|c| *c == '"' || *c == '\'') else {
-                return Ok(None);
-            };
-            let value = &after[1..];
-            let Some(end) = value.find(quote) else {
-                return Ok(None);
-            };
-            if key == name || key.rsplit(':').next() == Some(name) {
-                return unescape(&value[..end]).map(Some);
-            }
-            rest = &value[end + 1..];
-        }
-    }
-}
-
-/// Every element in `xml` whose local name is `name`, in document order;
-/// one found inside another of the same name is part of the outer one's
-/// content. The scan ends at an element that is never closed.
+/// Text as XML 1.0 reads it: every line end — a carriage return and line
+/// feed, or a carriage return alone — one line feed (XML 1.0 section 2.11).
 #[must_use]
-pub const fn elements<'a, 'n>(xml: &'a str, name: &'n str) -> Elements<'a, 'n> {
-    Elements { xml, name, at: 0 }
-}
-
-/// The elements [`elements`] finds.
-#[derive(Clone, Debug)]
-pub struct Elements<'a, 'n> {
-    xml: &'a str,
-    name: &'n str,
-    at: usize,
-}
-
-impl<'a> Iterator for Elements<'a, '_> {
-    type Item = Element<'a>;
-
-    fn next(&mut self) -> Option<Element<'a>> {
-        loop {
-            let found = tag(self.xml, self.at)?;
-            self.at = found.close + 1;
-            if found.local != self.name || found.closing {
-                continue;
-            }
-            if found.closed_itself {
-                return Some(Element {
-                    open: found.raw,
-                    content: "",
-                    closed_itself: true,
-                });
-            }
-            let start = found.close + 1;
-            let end = start + closing(&self.xml[start..], self.name)?;
-            self.at = end + self.xml[end..].find('>')? + 1;
-            return Some(Element {
-                open: found.raw,
-                content: &self.xml[start..end],
-                closed_itself: false,
-            });
-        }
+pub fn line_ends(text: &str) -> Cow<'_, str> {
+    if !text.contains('\r') {
+        return Cow::Borrowed(text);
     }
+    Cow::Owned(text.replace("\r\n", "\n").replace('\r', "\n"))
 }
 
-/// The content of the first element whose local name is `name`, escaped.
-#[must_use]
-pub fn content<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
-    elements(xml, name).next().map(|element| element.content)
-}
-
-/// The text of the first element whose local name is `name`.
-///
-/// # Errors
-///
-/// Its text holds an entity XML does not define.
-pub fn text(xml: &str, name: &str) -> Result<Option<String>> {
-    elements(xml, name).next().map(|e| e.text()).transpose()
-}
-
-/// The text of every element whose local name is `name`, in order.
-///
-/// # Errors
-///
-/// A text holds an entity XML does not define.
-pub fn texts(xml: &str, name: &str) -> Result<Vec<String>> {
-    elements(xml, name).map(|element| element.text()).collect()
-}
-
-/// The value of `attribute` on the first element whose local name is
-/// `name`.
+/// An attribute's value as XML 1.0 reads it: line ends made one, then each
+/// tab, carriage return and line feed written in it a space, and its
+/// entities and character references read — a character a reference names
+/// is kept as it is (XML 1.0 section 3.3.3).
 ///
 /// # Errors
 ///
 /// The value holds an entity XML does not define.
-pub fn attribute(xml: &str, name: &str, attribute: &str) -> Result<Option<String>> {
-    match elements(xml, name).next() {
-        Some(element) => element.attribute(attribute),
-        None => Ok(None),
+pub fn attribute_value(written: &str) -> Result<Cow<'_, str>> {
+    let special = |byte: &u8| matches!(byte, b'&' | b'\t' | b'\r' | b'\n');
+    if !written.as_bytes().iter().any(special) {
+        return Ok(Cow::Borrowed(written));
     }
-}
-
-/// One tag as it opens or closes an element.
-struct Tag<'a> {
-    /// Where its `<` is.
-    open: usize,
-    /// Where its `>` is.
-    close: usize,
-    /// What lies between the two.
-    raw: &'a str,
-    /// Its name without a prefix.
-    local: &'a str,
-    /// Whether it closes an element (`</x>`).
-    closing: bool,
-    /// Whether it opens and closes one (`<x/>`).
-    closed_itself: bool,
-}
-
-/// The next tag at or after `from`.
-fn tag(xml: &str, from: usize) -> Option<Tag<'_>> {
-    let open = from + xml.get(from..)?.find('<')?;
-    let close = open + xml[open..].find('>')?;
-    let raw = &xml[open + 1..close];
-    let closing = raw.starts_with('/');
-    let local = raw
-        .trim_start_matches('/')
-        .split(|c: char| c.is_ascii_whitespace() || c == '/')
-        .next()
-        .and_then(|qualified| qualified.rsplit(':').next())
-        .unwrap_or("");
-    Some(Tag {
-        open,
-        close,
-        raw,
-        local,
-        closing,
-        closed_itself: !closing && raw.ends_with('/'),
-    })
-}
-
-/// Where the close tag of `name` begins in `rest`, nested same-named
-/// elements stepped over.
-fn closing(rest: &str, name: &str) -> Option<usize> {
-    let mut depth = 0usize;
-    let mut at = 0;
-    loop {
-        let found = tag(rest, at)?;
-        if found.local == name {
-            if found.closing {
-                if depth == 0 {
-                    return Some(found.open);
-                }
-                depth -= 1;
-            } else if !found.closed_itself {
-                depth += 1;
-            }
+    let lined = line_ends(written);
+    let mut out = String::with_capacity(lined.len());
+    let mut rest: &str = &lined;
+    while let Some(at) = rest.find(['&', '\t', '\n']) {
+        out.push_str(&rest[..at]);
+        if rest.as_bytes()[at] == b'&' {
+            let after = &rest[at + 1..];
+            let end = after
+                .find(';')
+                .ok_or_else(|| CodecError::new("an XML entity is not terminated"))?;
+            out.push(entity(&after[..end])?);
+            rest = &after[end + 1..];
+        } else {
+            out.push(' ');
+            rest = &rest[at + 1..];
         }
-        at = found.close + 1;
     }
+    out.push_str(rest);
+    Ok(Cow::Owned(out))
+}
+
+/// Where byte `at` of `text` is as a person counts: its line and its column
+/// in characters, both from 1 — what a finding names a place by.
+#[must_use]
+pub fn line_and_column(text: &str, at: usize) -> (usize, usize) {
+    let mut before = at.min(text.len());
+    while !text.is_char_boundary(before) {
+        before -= 1;
+    }
+    let before = &text[..before];
+    let line = before.bytes().filter(|byte| *byte == b'\n').count() + 1;
+    let start = before.rfind('\n').map_or(0, |newline| newline + 1);
+    (line, before[start..].chars().count() + 1)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_byte_is_placed_by_line_and_column() {
+        assert_eq!(line_and_column("<a>\n  <b>", 6), (2, 3));
+        assert_eq!(line_and_column("<a>", 0), (1, 1));
+        assert_eq!(line_and_column("é<", 2), (1, 2));
+        assert_eq!(line_and_column("ab", 99), (1, 3));
+    }
 
     #[test]
     fn escaped_text_reads_back_whole() {
@@ -325,62 +208,26 @@ mod tests {
     }
 
     #[test]
-    fn an_element_is_found_by_local_name_whatever_its_prefix() {
-        let xml = "<?xml version=\"1.0\"?><a:X>1</a:X><Y>2</Y><Xy>3</Xy><ns2:X>4&amp;</ns2:X>";
-        assert_eq!(content(xml, "X"), Some("1"));
-        assert_eq!(content(xml, "Y"), Some("2"));
-        assert_eq!(content(xml, "Absent"), None);
-        assert_eq!(texts(xml, "X").expect("read"), ["1", "4&"]);
-        assert_eq!(text(xml, "Xy").expect("read").as_deref(), Some("3"));
-        assert_eq!(content("<X>never closed", "X"), None);
-        assert!(texts("<Key>a&nbsp;b</Key>", "Key").is_err());
-    }
-
-    #[test]
-    fn a_nested_same_named_element_is_part_of_the_outer_ones_content() {
-        let xml = "<D:response><D:href>/a</D:href><D:response>inner</D:response></D:response>\
-                   <response><href>/b</href></response>";
-        let found: Vec<&str> = elements(xml, "response").map(|e| e.content()).collect();
-        assert_eq!(found.len(), 2);
-        assert!(
-            found[0].ends_with("<D:response>inner</D:response>"),
-            "{}",
-            found[0]
-        );
-        assert_eq!(content(found[1], "href"), Some("/b"));
-    }
-
-    #[test]
-    fn an_element_that_closed_itself_is_found_with_no_content() {
-        let found = elements("<X/><X>late</X>", "X").next().expect("found");
-        assert!(found.closed_itself());
-        assert_eq!(found.content(), "");
-        assert_eq!(content("<D:collection/>", "collection"), Some(""));
-    }
-
-    #[test]
-    fn an_attribute_is_read_by_name_or_local_name_either_quote_unescaped() {
-        let xml =
-            "<eb:PartInfo xhref=\"no\" href=\"cid:a&amp;b\"/><Service eb:type='t'>s</Service>";
-        assert_eq!(
-            attribute(xml, "PartInfo", "href").expect("read").as_deref(),
-            Some("cid:a&b")
-        );
-        assert_eq!(
-            attribute(xml, "Service", "type").expect("read").as_deref(),
-            Some("t")
-        );
-        assert_eq!(attribute(xml, "PartInfo", "absent").expect("read"), None);
-        assert_eq!(attribute(xml, "Absent", "href").expect("read"), None);
-        assert!(attribute("<P a=\"&nbsp;\"/>", "P", "a").is_err());
-    }
-
-    #[test]
     fn what_is_not_an_entity_is_refused_saying_which() {
         let refused = |text: &str| unescape(text).expect_err("refused").message;
         assert!(refused("a &nbsp; b").contains("&nbsp;"));
         assert!(refused("a & b").contains("not terminated"));
         assert!(refused("&#xD800;").contains("names no character"));
         assert!(refused("&#;").contains("names no character"));
+    }
+
+    #[test]
+    fn line_ends_and_an_attributes_white_space_are_read_as_xml_reads_them() {
+        assert_eq!(line_ends("a\r\nb\rc\n"), "a\nb\nc\n");
+        assert!(matches!(line_ends("plain"), Cow::Borrowed("plain")));
+        assert_eq!(
+            attribute_value("a\r\n\tb&#10;c&amp;").expect("read"),
+            "a  b\nc&"
+        );
+        assert!(matches!(
+            attribute_value("plain").expect("read"),
+            Cow::Borrowed("plain")
+        ));
+        assert!(attribute_value("&nbsp;").is_err());
     }
 }
