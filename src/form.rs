@@ -25,6 +25,11 @@ use crate::cursor::Cursor;
 use crate::writer::ByteWriter;
 use crate::{CodecError, Result};
 
+/// The room a form is written in where it says no other
+/// ([`Form::capacity`]): a record of a few fields and identifiers. One
+/// longer grows once or twice; one with a body says its length.
+pub const CAPACITY: usize = 64;
+
 /// A value written in its one binary form and read back from it.
 pub trait Form: Sized {
     /// Written after what `out` holds.
@@ -36,10 +41,20 @@ pub trait Form: Sized {
     /// The bytes are cut short or say what no value of it is.
     fn read(cursor: &mut Cursor<'_>) -> Result<Self>;
 
-    /// The value alone, as bytes.
+    /// About how many bytes its form takes: the room [`Form::bytes`] writes
+    /// it in, so a record is written in one allocation rather than grown
+    /// from nothing, eight bytes, sixteen and so on (2026-11-17). A form
+    /// with a body of any length says it beside its fields.
+    #[must_use]
+    fn capacity(&self) -> usize {
+        CAPACITY
+    }
+
+    /// The value alone, as bytes, written in the room
+    /// [`Form::capacity`] says.
     #[must_use]
     fn bytes(&self) -> Vec<u8> {
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(self.capacity());
         self.write(&mut out);
         out
     }

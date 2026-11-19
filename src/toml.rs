@@ -31,27 +31,37 @@ pub fn quote_into(out: &mut String, value: impl std::fmt::Display) {
     out.push('"');
 }
 
-/// What is written through it, escaped as a basic string's content.
+/// What is written through it, escaped as a basic string's content: each
+/// run of text that needs no escape written whole, never a character at a
+/// time (2026-11-17). Every character TOML escapes is ASCII, so a run ends
+/// on a character's boundary.
 struct Escaping<'a>(&'a mut String);
 
 impl Write for Escaping<'_> {
     fn write_str(&mut self, text: &str) -> std::fmt::Result {
         let out = &mut *self.0;
-        for character in text.chars() {
-            match character {
-                '"' => out.push_str("\\\""),
-                '\\' => out.push_str("\\\\"),
-                '\u{8}' => out.push_str("\\b"),
-                '\t' => out.push_str("\\t"),
-                '\n' => out.push_str("\\n"),
-                '\u{c}' => out.push_str("\\f"),
-                '\r' => out.push_str("\\r"),
-                '\u{0}'..='\u{1f}' | '\u{7f}' => {
-                    write!(out, "\\u{:04X}", u32::from(character))?;
-                }
-                other => out.push(other),
+        let mut plain = 0;
+        for (at, byte) in text.bytes().enumerate() {
+            let escape = match byte {
+                b'"' => "\\\"",
+                b'\\' => "\\\\",
+                0x08 => "\\b",
+                b'\t' => "\\t",
+                b'\n' => "\\n",
+                0x0c => "\\f",
+                b'\r' => "\\r",
+                0x00..=0x1f | 0x7f => "",
+                _ => continue,
+            };
+            out.push_str(&text[plain..at]);
+            if escape.is_empty() {
+                write!(out, "\\u{:04X}", u32::from(byte))?;
+            } else {
+                out.push_str(escape);
             }
+            plain = at + 1;
         }
+        out.push_str(&text[plain..]);
         Ok(())
     }
 }
