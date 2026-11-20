@@ -71,22 +71,37 @@ pub fn decode(bytes: &[u8]) -> Result<(u64, usize), VarintError> {
 /// `value` as a varint: the inverse of [`decode`].
 #[must_use]
 pub fn encode(value: u64) -> Vec<u8> {
-    let mut out = Vec::with_capacity(MAX_LENGTH);
-    encode_into(&mut out, value);
-    out
+    let (bytes, length) = encoded(value);
+    bytes[..length].to_vec()
 }
 
 /// `value` as a varint, appended to `out`.
 #[inline]
-pub fn encode_into(out: &mut Vec<u8>, mut value: u64) {
+pub fn encode_into(out: &mut Vec<u8>, value: u64) {
+    let (bytes, length) = encoded(value);
+    out.extend_from_slice(&bytes[..length]);
+}
+
+/// `value` as a varint in room of its own on the stack: the bytes, the
+/// first `length` of them its. What [`encode`], [`encode_into`] and the
+/// byte writer's varint each write, so none takes room from the heap for
+/// it but the one that answers a `Vec`. Until 2026-11-20 the byte writer
+/// took a `Vec` from the heap for every varint, every counted field and
+/// text of every record Xmip Storage writes among them.
+#[must_use]
+#[inline]
+pub fn encoded(mut value: u64) -> ([u8; MAX_LENGTH], usize) {
+    let mut bytes = [0; MAX_LENGTH];
+    let mut length = 0;
     loop {
         let low = u8::try_from(value & 0x7f).unwrap_or(0);
         value >>= 7;
         if value == 0 {
-            out.push(low);
-            return;
+            bytes[length] = low;
+            return (bytes, length + 1);
         }
-        out.push(low | 0x80);
+        bytes[length] = low | 0x80;
+        length += 1;
     }
 }
 
@@ -143,6 +158,26 @@ mod tests {
                 assert_eq!(decode(&bytes), Ok((value, bytes.len())), "{value}");
             }
         }
+    }
+
+    #[test]
+    fn a_varint_written_from_the_stack_is_the_one_encode_writes() {
+        use crate::writer::ByteWriter;
+        for value in [0, 1, 127, 128, 300, 1 << 35, u64::MAX] {
+            let (bytes, length) = encoded(value);
+            assert_eq!(bytes[..length], encode(value), "{value}");
+            let mut appended = vec![7];
+            encode_into(&mut appended, value);
+            let mut written = vec![7];
+            written.varint(value);
+            assert_eq!(appended, written, "{value}");
+            assert_eq!(appended[1..], bytes[..length], "{value}");
+        }
+        assert_eq!(
+            encoded(u64::MAX).1,
+            MAX_LENGTH,
+            "the longest fills its room"
+        );
     }
 
     #[test]

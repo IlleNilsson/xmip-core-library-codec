@@ -24,9 +24,11 @@ pub trait ByteWriter {
     /// `bytes` as they are.
     fn bytes(&mut self, bytes: &[u8]) -> &mut Self;
 
-    /// `value` as a varint ([`varint`]).
+    /// `value` as a varint ([`varint`]), written from the stack
+    /// ([`varint::encoded`]).
     fn varint(&mut self, value: u64) -> &mut Self {
-        self.bytes(&varint::encode(value))
+        let (bytes, length) = varint::encoded(value);
+        self.bytes(&bytes[..length])
     }
 
     /// `value`, big-endian.
