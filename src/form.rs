@@ -77,8 +77,14 @@ pub trait Form: Sized {
     }
 }
 
-/// A value boxed is the value: a large one is kept on the heap.
+/// A value boxed is the value: a large one is kept on the heap. Its room
+/// is the value's (2026-11-20: until then the 64 bytes every form says
+/// that says none, so a boxed audit record grew three times).
 impl<T: Form> Form for Box<T> {
+    fn capacity(&self) -> usize {
+        (**self).capacity()
+    }
+
     fn write(&self, out: &mut Vec<u8>) {
         (**self).write(out);
     }
@@ -89,8 +95,13 @@ impl<T: Form> Form for Box<T> {
 }
 
 /// A run of values: their count, four bytes big-endian, then each in its
-/// form. A run counted by a varint is [`crate::field::many`].
+/// form. A run counted by a varint is [`crate::field::many`]. Its room is
+/// its count's and each value's (2026-11-20).
 impl<T: Form> Form for Vec<T> {
+    fn capacity(&self) -> usize {
+        4 + self.iter().map(Form::capacity).sum::<usize>()
+    }
+
     fn write(&self, out: &mut Vec<u8>) {
         out.u32_be(u32::try_from(self.len()).unwrap_or(u32::MAX));
         for item in self {
@@ -187,6 +198,38 @@ mod tests {
         let bytes = run.bytes();
         assert_eq!(&bytes[..4], &[0, 0, 0, 2], "counted in four bytes");
         assert_eq!(Vec::<Named>::from_bytes(&bytes).expect("run"), run);
+    }
+
+    #[test]
+    fn a_boxed_value_and_a_run_are_written_in_the_room_their_values_say() {
+        struct Long(Vec<u8>);
+
+        impl Form for Long {
+            fn capacity(&self) -> usize {
+                crate::varint::MAX_LENGTH + self.0.len()
+            }
+
+            fn write(&self, out: &mut Vec<u8>) {
+                field::counted(out, &self.0);
+            }
+
+            fn read(cursor: &mut Cursor<'_>) -> Result<Self> {
+                Ok(Self(field::read_counted(cursor)?.to_vec()))
+            }
+        }
+
+        // Grown from 64 bytes, the one would end at 512, the run at 1024.
+        let long = || Long(vec![7; 300]);
+        let boxed = Box::new(long());
+        assert_eq!(Form::capacity(&boxed), 310, "the value's own");
+        assert_eq!(boxed.bytes().capacity(), 310, "written in it, never grown");
+        let run = vec![long(), long()];
+        assert_eq!(
+            Form::capacity(&run),
+            4 + 2 * 310,
+            "its count's and each value's"
+        );
+        assert_eq!(run.bytes().capacity(), 624);
     }
 
     #[test]
