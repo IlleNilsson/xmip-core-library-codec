@@ -170,6 +170,19 @@ pub const CRC_16_EN_13757: Crc<u16> = Crc {
     check: 0xc2b7,
 };
 
+/// CRC-16/IBM-SDLC, also X-25 and ISO-HDLC: the frame check sequence an
+/// HDLC frame closes with, and the one IMST's `WiMOD` host controller
+/// interface puts after every message, least significant byte first — the
+/// wireless M-Bus receiver sticks among them.
+pub const CRC_16_IBM_SDLC: Crc<u16> = Crc {
+    polynomial: 0x1021,
+    initial: 0xffff,
+    reflect_in: true,
+    reflect_out: true,
+    xor_out: 0xffff,
+    check: 0x906e,
+};
+
 /// CRC-32/ISCSI, Castagnoli's CRC-32C: what a Kafka record batch header
 /// carries over everything after it.
 pub const CRC_32_ISCSI: Crc<u32> = Crc {
@@ -203,7 +216,7 @@ mod tests {
 
     #[test]
     fn every_named_crc_gives_its_catalogued_check_value() {
-        for crc in [CRC_16_KERMIT, CRC_16_DNP, CRC_16_EN_13757] {
+        for crc in [CRC_16_KERMIT, CRC_16_DNP, CRC_16_EN_13757, CRC_16_IBM_SDLC] {
             assert_eq!(crc.checksum(CHECK), crc.check, "{crc:?}");
         }
         assert_eq!(CRC_32_ISCSI.checksum(CHECK), CRC_32_ISCSI.check);
